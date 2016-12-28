@@ -100,24 +100,6 @@ BCDvar *B2C_sub(BCDvar *buffer, BCDvar *a, BCDvar *b) {
 	unsigned char tempByte;
 	int result[15] = {0};
 	//Check for special cases
-	//a > 0 and b < 0 -> a+(-b)
-	//Ex: 3-(-4) -> 3+4
-	if ((*a)[0] < 0x30 && (*b)[0] > 0x30) {
-		BCDvar b2;
-		memcpy(b2, b, 9);
-		b2[0] -= 0x50;
-		return B2C_add(buffer, a, &b2);
-	}
-	//a < 0 and b > 0 -> -(a+b)
-	//Ex: (-4)-3 -> -(4+3)
-	if ((*a)[0] > 0x30 && (*b)[0] < 0x30) {
-		BCDvar a2;
-		memcpy(a2, a, 9);
-		a2[0] -= 0x50;
-		B2C_add(buffer, &a2, b);
-		(*buffer)[0] += 0x50;
-		return buffer;
-	}
 	//a < 0 and b < 0 -> b-a
 	//Ex: (-4)-(-3) -> 3-4
 	if ((*a)[0] > 0x30 && (*b)[0] > 0x30) {
@@ -126,8 +108,27 @@ BCDvar *B2C_sub(BCDvar *buffer, BCDvar *a, BCDvar *b) {
 		memcpy(b2, b, 9);
 		a2[0] -= 0x50;
 		b2[0] -= 0x50;
-		return B2C_sub(buffer, &a2, &b2);
+		return B2C_sub(buffer, &b2, &a2);
 	}
+	//a > 0 and b < 0 -> a+(-b)
+	//Ex: 3-(-4) -> 3+4
+	if ((*b)[0] > 0x30) {
+		BCDvar b2;
+		memcpy(b2, b, 9);
+		b2[0] -= 0x50;
+		return B2C_add(buffer, a, &b2);
+	}
+	//a < 0 and b > 0 -> -(a+b)
+	//Ex: (-4)-3 -> -(4+3)
+	if ((*a)[0] > 0x30) {
+		BCDvar a2;
+		memcpy(a2, a, 9);
+		a2[0] -= 0x50;
+		B2C_add(buffer, &a2, b);
+		(*buffer)[0] += 0x50;
+		return buffer;
+	}
+	
 	//if a < b sub b-a
 	if (B2C_greaterThan(b, a)) {
 		return B2C_sub(buffer, b, a);
