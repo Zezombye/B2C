@@ -18,14 +18,19 @@ public class B2C {
 	final static boolean debugMode = true;
 	
 	static String path = "C:\\Users\\Catherine\\Documents\\CASIO\\fx-9860G SDK\\TestB2C\\";
-	static String pathToG1M = "C:\\Users\\Catherine\\Desktop\\test.g1m";
-	static String mainProgramName = "TEST";
+	static String mainProgramName = "__uiss4_";
+	static String pathToG1M = "C:\\Users\\Catherine\\Desktop\\puiss4.g1m";
 	static boolean isRealTimeGame = true;
 	static boolean assureOS1Compatibility = true;
 	static boolean usesAcOnTimer = true;
 	static String main_c;
 	
-	
+	/**
+	 * Main method of B2C.
+	 * args[0]: path to g1m file
+	 * args[1]: main program name	 
+	 * args[2]: path to project folder
+	 */
 	public static void main(String[] args) {
 		if (!debugMode) {
 			Scanner sc = new Scanner(System.in);
@@ -65,6 +70,18 @@ public class B2C {
 					IO.readFromRelativeFile("AddinInfo.txt").replaceAll("%PROG_NAME%", programName), true);
 			
 		}
+		if (args.length > 0) {
+			pathToG1M = args[0];
+			if (!pathToG1M.matches(".+\\.g[12][mr]")) {
+				Parser.error("File provided (" + pathToG1M + ") is not of g1m type!");
+			}
+		}
+		if (args.length > 1) {
+			mainProgramName = args[1];
+		}
+		if (args.length > 2) {
+			path = args[2];
+		}
 		long startTime = System.currentTimeMillis();
 		
 		//Add some constants for functions
@@ -88,10 +105,10 @@ public class B2C {
 				"#include \"main.h\"\n\n" +
 				"unsigned int key;\n" +
 				"int i;\n"+
-				"BCDvar var[28] = {0}; //A-Z, r, theta\n"+
-				"BCDvar Ans;\n" +
+				"BCDvar var[29] = {0}; //A-Z, r, theta, Ans\n"+
 				"Str strings[20];\n" + 
 				"Mat mat[26]; //Important thing: matrixes are (height, width) not (width, height)\n" +
+				"List list[26];\n" +
 				"char dummyOpCode[2] = {5, 8};\n" +
 				"//These are buffers for syscalls that do not return a value.\n" +
 				"BCDvar alphaVarBuffer;\n" +
@@ -109,7 +126,7 @@ public class B2C {
 					"\t}\n" +
 					"\t#ifdef USES_INTERRUPTION_TIMER\n" +
 					"\t//Timer allowing AC/ON to be pressed at any moment\n" +
-					"\tSetTimer(INTERRUPTION_TIMER, 50, exitTimerHandler);\n" +
+					"\tSetTimer(INTERRUPTION_TIMER, 50, (void (*)(void))exitTimerHandler);\n" +
 					"\t#endif\n" +
 					"\tprog_"+mainProgramName+"();\n\n" +
 					"\tdo {\n" +
@@ -177,16 +194,23 @@ public class B2C {
 		Syscalls.addSyscall("overwriteItemData", "830");
 		Syscalls.addSyscall("setSetupEntry", "4DD");
 		Syscalls.addSyscall("getSetupEntry", "4DC");
+		Syscalls.addSyscall("dispErrorMessage", "954");
 		Syscalls.createSyscallFile();
 		
 		String[] externalLibs = {"MonochromeLib.c", "MonochromeLib.h", "memory.c", "memory.h"};
 		for (int i = 0; i <= 1; i++) {
 			IO.writeToFile(new File(path+externalLibs[i]), IO.readFromRelativeFile(externalLibs[i]), true);
 		}
+		for (char c = 'A'; c <= 'Z'; c++) {
+			Header.addDefine(c+" "+(int)c);
+		}
 		Header.addDefine("FALSE 0");
 		Header.addDefine("TRUE 1");
-		Header.addDefine("NO_ERROR 0");
-		Header.addDefine("MEMORY_ERROR 1");
+		Header.addDefine("A_GREATER_THAN_B 1");
+		Header.addDefine("A_EQUALS_B 0");
+		Header.addDefine("A_LESS_THAN_B -1");
+		Header.addDefine("NO_ERROR 1");
+		Header.addDefine("MEMORY_ERROR 4");
 		Header.addDefine("INTERRUPTION_TIMER 2");
 		if (usesAcOnTimer) {
 			Header.addDefine("USES_INTERRUPTION_TIMER");
@@ -200,10 +224,15 @@ public class B2C {
 		Header.addDefine("LIST_START 0x10");
 		Header.addDefine("MAT_START 0x10");
 		
+		Header.addDefine("ANS 28");
+		Header.addDefine("THETA 27");
+		Header.addDefine("RADIUS 26");
+		
 		Header.addDefine("SETUP_LISTFILE 0x2E");
 		
 		Header.addDefine("free_str(x) if(!isString){free(x->data); free(x);}");
 		Header.addDefine("getDigit(BCDvar, i) (((i)%2) ? (*(BCDvar))[((i)+1)/2+1]>>4 : (*(BCDvar))[((i)+1)/2+1]&0x0F)");
+		Header.addDefine("getExp(BCDvar) (((*(a))[0]>>4) * 100 + ((*(a))[0]&0x0F) * 10 + ((*(a))[1]>>4))");
 		Header.create();
 		
 		System.out.println("Parsing done in " + (System.currentTimeMillis()-startTime) + " ms.");

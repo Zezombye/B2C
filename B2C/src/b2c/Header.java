@@ -29,12 +29,12 @@ public class Header {
 				headerDefines + "\n\n" + 
 				"typedef unsigned char BCDvar[24]; //this defines BCDvar as an array of 24 unsigned chars\n" +
 				"typedef struct {\n" +
-				"\t//int nbElements;\n" +
+				"\tint nbElements;\n" +
 				"\tBCDvar *data;\n" +
 				"} List;\n\n" +
 				"typedef struct {\n" +
-				"\t//int width;\n" +
-				"\t//int height;\n" +
+				"\tint width;\n" +
+				"\tint height;\n" +
 				"\tBCDvar *data;\n" +
 				"} Mat;\n\n" +
 				//"typedef unsigned short Fontchar;\n" +

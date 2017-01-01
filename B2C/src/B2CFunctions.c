@@ -33,8 +33,8 @@ BCDvar *B2C_add(BCDvar *buffer, BCDvar *a, BCDvar *b) {
 	}
 	
 	//First determine which number has a bigger exponent
-	expA = ((*a)[0]>>4) * 100 + ((*a)[0]&0x0F) * 10 + ((*a)[1]>>4) - 100;
-	expB = ((*b)[0]>>4) * 100 + ((*b)[0]&0x0F) * 10 + ((*b)[1]>>4) - 100;
+	expA = getExp(a);
+	expB = getExp(b);
 	if (expA > expB) {
 		smallerExp = b;
 		biggerExp = a;
@@ -66,7 +66,6 @@ BCDvar *B2C_add(BCDvar *buffer, BCDvar *a, BCDvar *b) {
 	if (carry == 1) {
 		biggerExp_int++;
 	}
-	biggerExp_int += 100;
 	//locate(1,6); printChar(biggerExp_int);
 	//locate(3,6); printChar(expA+'0');
 	//locate(5,6); printChar(expB+'0');
@@ -96,7 +95,7 @@ BCDvar *B2C_sub(BCDvar *buffer, BCDvar *a, BCDvar *b) {
 //Substract a positive number B from a positive number A (A-B).
 //A must be greater than B for the algorithm to function.
 //However this function does the necessary checks so A and B can be any reals.
-	int expA, expB, expDiff, carry = 0, tempsub;
+	int expA, expB, expDiff, carry = 0, tempsub, compareResult;
 	unsigned char tempByte;
 	int result[15] = {0};
 	//Check for special cases
@@ -104,8 +103,8 @@ BCDvar *B2C_sub(BCDvar *buffer, BCDvar *a, BCDvar *b) {
 	//Ex: (-4)-(-3) -> 3-4
 	if ((*a)[0] > 0x30 && (*b)[0] > 0x30) {
 		BCDvar a2, b2;
-		memcpy(a2, a, 9);
-		memcpy(b2, b, 9);
+		memcpy(a2, *a, 9);
+		memcpy(b2, *b, 9);
 		a2[0] -= 0x50;
 		b2[0] -= 0x50;
 		return B2C_sub(buffer, &b2, &a2);
@@ -114,7 +113,7 @@ BCDvar *B2C_sub(BCDvar *buffer, BCDvar *a, BCDvar *b) {
 	//Ex: 3-(-4) -> 3+4
 	if ((*b)[0] > 0x30) {
 		BCDvar b2;
-		memcpy(b2, b, 9);
+		memcpy(b2, *b, 9);
 		b2[0] -= 0x50;
 		return B2C_add(buffer, a, &b2);
 	}
@@ -122,21 +121,29 @@ BCDvar *B2C_sub(BCDvar *buffer, BCDvar *a, BCDvar *b) {
 	//Ex: (-4)-3 -> -(4+3)
 	if ((*a)[0] > 0x30) {
 		BCDvar a2;
-		memcpy(a2, a, 9);
+		memcpy(a2, *a, 9);
 		a2[0] -= 0x50;
 		B2C_add(buffer, &a2, b);
 		(*buffer)[0] += 0x50;
 		return buffer;
 	}
 	
-	//if a < b sub b-a
-	if (B2C_greaterThan(b, a)) {
-		return B2C_sub(buffer, b, a);
+	compareResult = B2C_compareBCDvars(a, b);
+	//a < b -> -(a-b)
+	//Ex : 3-4 -> -(4-3)
+	if (compareResult == A_LESS_THAN_B) {
+		B2C_sub(buffer, b, a);
+		(*buffer)[0] += 0x50;
+		return buffer;
+		
+	//if a=b then a-b = 0
+	} else if (compareResult == A_EQUALS_B) {
+		return &_0_;
 	}
 	
 	//Determine the exponent difference; A is always the biggest number
-	expA = ((*a)[0]>>4) * 100 + ((*a)[0]&0x0F) * 10 + ((*a)[1]>>4);
-	expB = ((*b)[0]>>4) * 100 + ((*b)[0]&0x0F) * 10 + ((*b)[1]>>4);
+	expA = getExp(a);
+	expB = getExp(b);
 	expDiff = expA-expB;
 	
 	//Substract
@@ -176,122 +183,221 @@ BCDvar *B2C_sub(BCDvar *buffer, BCDvar *a, BCDvar *b) {
 	
 }
 
-int B2C_greaterThan(BCDvar *a, BCDvar *b) {
-	return FALSE;
+BCDvar *B2C_mult(BCDvar *buffer, BCDvar *a, BCDvar *b) {
+
+	//TODO: implement algorithm
+	//Here is my attempt at doing it (warning: yields completely false results)
+	//Algorithm from wikipedia: https://en.wikipedia.org/wiki/Multiplication_algorithm#Long_multiplication
+	/*int expA, expB, i, j, carry, tempDigit, expResult, firstDigitInResult = 0;
+	unsigned char tempByte;
+	char result[30] = {0};
+	expA = getExp(a)%500-100;
+	expB = getExp(b)%500-100;
+	
+	for (i = 15; i > 0; i--) { //digits of b
+		carry = 0;
+		for (j = 15; j > 0; j--) { //digits of a
+			result[i+j-1] += carry + getDigit(a, j-1) + getDigit(b, i-1);
+			carry = result[i+j-1]/10;
+			result[i+j-1] %= 10;
+		}
+		result[i+15] += carry;
+	}
+	
+	expResult = expA+expB + 100 + carry;
+	
+	//Put exponent in buffer
+	(*buffer)[0] = (expResult/100 << 4) + (expResult%100)/10;
+	tempByte = (expResult%10 << 4);
+	
+	//Calculate position of first non-zero digit in result
+	for (i = 0; result[i] == 0 && i < 30; i++) {
+		firstDigitInResult++;
+		locate(1,7); Print("test");
+	}
+	for (i = 0; i < 15; i++) {
+		locate(i+1, 4); printChar(result[i]+'0');
+		locate(i+1, 5); printChar(result[i+15]+'0');
+	}
+	//Put result in buffer
+	for (i = 0; i < 15; i++) {
+		if (i%2) {
+			tempByte = result[i+firstDigitInResult] << 4;
+		} else {
+			(*buffer)[(i+1)/2+1] = tempByte + result[i+firstDigitInResult];
+		}
+	}*/
+	
+	const char *function = "A\xA9""B";
+	setAlphaVar('A', a);
+	setAlphaVar('B', b);
+	calcExp(&function, dummyOpCode, buffer, 1);
+	
+	return buffer;
+}
+
+BCDvar *B2C_div(BCDvar *buffer, BCDvar *a, BCDvar *b) {
+//TODO: make algorithm for division
+
+	const char *function = "A\xB9""B";
+	setAlphaVar('A', a);
+	setAlphaVar('B', b);
+	calcExp(&function, dummyOpCode, buffer, 1);
+	
+	return buffer;
+}
+
+BCDvar *B2C_pow(BCDvar *buffer, BCDvar *a, BCDvar *b) {
+//TODO: make algorithm for division
+
+	const char *function = "A\xA8""B";
+	setAlphaVar('A', a);
+	setAlphaVar('B', b);
+	calcExp(&function, dummyOpCode, buffer, 1);
+	
+	return buffer;
+}
+
+BCDvar *B2C_sqrt(BCDvar *buffer, BCDvar *a, BCDvar *b) {
+//TODO: make algorithm for division
+
+	const char *function = "A\x86""B";
+	setAlphaVar('A', a);
+	setAlphaVar('B', b);
+	calcExp(&function, dummyOpCode, buffer, 1);
+	
+	return buffer;
+}
+
+BCDvar *B2C_greaterThan(BCDvar *a, BCDvar *b) {
+	if (B2C_compareBCDvars(a, b) == A_GREATER_THAN_B) return &_1_;
+	return &_0_;
+}
+
+BCDvar *B2C_greaterOrEqualThan(BCDvar *a, BCDvar *b) {
+	if (B2C_compareBCDvars(a, b) == A_LESS_THAN_B) return &_0_;
+	return &_1_;
+}
+
+BCDvar *B2C_lessThan(BCDvar *a, BCDvar *b) {
+	if (B2C_compareBCDvars(a, b) == A_LESS_THAN_B) return &_1_;
+	return &_0_;
+}
+
+BCDvar *B2C_lessOrEqualThan(BCDvar *a, BCDvar *b) {
+	if (B2C_compareBCDvars(a, b) == A_GREATER_THAN_B) return &_0_;
+	return &_1_;
+}
+
+BCDvar *B2C_equalTo(BCDvar *a, BCDvar *b) {
+	if (B2C_compareBCDvars(a, b) == A_EQUALS_B) return &_1_;
+	return &_0_;
+}
+
+BCDvar *B2C_notEqualTo(BCDvar *a, BCDvar *b) {
+	if (B2C_compareBCDvars(a, b) == A_EQUALS_B) return &_0_;
+	return &_1_;
+}
+
+int B2C_compareBCDvars(BCDvar *a, BCDvar *b) {
+//Return: A_GREATER_THAN_B (1), A_EQUALS_B (0) or A_LESS_THAN_B (-1)
+	int expA, expB, areBothNegatives = 1, tempDigitA, tempDigitB;
+	
+	//Compare sign
+	//If both are negatives we'll compare them then yield the opposite result
+	if ((*a)[0] > 0x30 && (*b)[0] > 0x30) {
+		areBothNegatives = -1;
+	}
+	//If a > 0 and b < 0 then a > b
+	if ((*a)[0] < 0x30 && (*b)[0] > 0x30) {
+		return A_GREATER_THAN_B;
+	}
+	//If a < 0 and b > 0 then a < b
+	if ((*a)[0] > 0x30 && (*b)[0] < 0x30) {
+		return A_LESS_THAN_B;
+	}
+	//Compare exponents
+	expA = getExp(a);
+	expB = getExp(b);
+	if (areBothNegatives) {
+		expA -= 500;
+		expB -= 500;
+	}
+	if (expA > expB) {
+		return areBothNegatives * A_GREATER_THAN_B;
+	} else if (expA < expB) {
+		return areBothNegatives * A_LESS_THAN_B;
+	}
+	
+	//Exponents are equal ; compare digits
+	for (i = 0; i < 15; i++) {
+		tempDigitA = getDigit(a, i);
+		tempDigitB = getDigit(b, i);
+		if (tempDigitA > tempDigitB) {
+			return areBothNegatives * A_GREATER_THAN_B;
+		} else if (tempDigitA < tempDigitB) {
+			return areBothNegatives * A_LESS_THAN_B;
+		}
+	}
+	//At this point a = b
+	return A_EQUALS_B;
 }
 
 BCDvar *B2C_not(BCDvar *a) {
-	if ((*a)[1])
-		return &_0_;
+	if ((*a)[1]) return &_0_;
 	return &_1_;
+}
+BCDvar *B2C_and(BCDvar *a, BCDvar *b) {
+	if ((*a)[1] && (*b)[1]) return &_1_;
+	return &_0_;
+}
+BCDvar *B2C_or(BCDvar *a, BCDvar *b) {
+	if ((*a)[1] || (*b)[1]) return &_1_;
+	return &_0_;
+}
+BCDvar *B2C_xor(BCDvar *a, BCDvar *b) {
+	//Thanks stackoverflow for optimized xor function
+	if (!((*a)[1]) != !((*b)[1])) return &_1_;
+	return &_0_;
 }
 unsigned char* B2C_convToStr(BCDvar *nb) {
 	bcdToStr(nb, stringBuffer);
 	return stringBuffer;
 }
+
 void B2C_setListRow(unsigned int nbList, unsigned int row, BCDvar *value) {
-	//TODO: handle complex numbers
-	unsigned short nbElements = 0;
-	char listName[] = "0LIST\0\0";
-	listName[0] = getSetupEntry(SETUP_LISTFILE) + '0';
-	if (nbList >= 10) {
-		listName[5] = nbList/10 + '0';
-		listName[6] = nbList%10 + '0';
-	} else {
-		listName[5] = nbList + '0';
-	}
-	//Three possible cases: the list exists and the row isn't a new one, list exists and the row
-	//has to be added, list doesn't exist and has to be created
-	
-	//First case: list has to be created
-	if (getItemData("main", listName, 8, 2, &nbElements)) { //most likely an error "file does not exist" - it can be another error but doing checks is time consuming
-		unsigned char listContent[28] = {0,0,0,0,0,0,0,0, 0,1, 0,0,0,0,0,0};
-		memcpy(listContent+16, value, 12);
-		putInternalItem(DIR_LIST, listName, 28, listContent);
-	} else {
-		//Second case: row has to be added
-		if (row > nbElements) {
-			//char str[2] = {0};
-			unsigned short existingListElements;
-			unsigned int existingListLength;
-			unsigned char* buffer;
-			getItemSize("main", listName, &existingListLength);
-			buffer = calloc(existingListLength+12, 1);
-			
-			//Copy existing list data
-			getItemData("main", listName, 0, existingListLength, buffer);
-			
-			//Increase number of elements
-			memcpy(buffer+8, &existingListElements, 2);
-			existingListElements++;
-			memcpy(&existingListElements, buffer+8, 2);
-			
-			//Put the new value in the buffer
-			memcpy(buffer+existingListLength, value, 12);
-			deleteInternalItem(DIR_LIST, listName);
-			putInternalItem(DIR_LIST, listName, existingListLength+12, buffer);
-			free(buffer);
-			
-		} else if (1) {
-			overwriteItemData("main", listName, 12, value, 4+12*row);
-		
-		//DO NOT REMOVE THIS CONDITION OR ANYTHING INSIDE IT; THE DEMON INSIDE THIS FUNCTION WILL NOT APPROVE
-		} else {
-			locate(1,6); 
-			Print("test");
-			locate(23,2); 
-			Print(" ");
-		}
-	}
+	memcpy(list[nbList].data[row], *value, 21);
 }
+
 void B2C_setDimList(unsigned int nbList, unsigned short nbElements) {
-	unsigned char* content = calloc(12*nbElements+LIST_START, 1);
-	char listName[] = "0LIST\0\0";
-	listName[0] = getSetupEntry(SETUP_LISTFILE) + '0';
-	if (nbList >= 10) {
-		listName[5] = nbList/10 + '0';
-		listName[6] = nbList%10 + '0';
-	} else {
-		listName[5] = nbList + '0';
-	}
-	content[8] = nbElements>>8;
-	content[9] = nbElements&0xFF;
-	deleteInternalItem(DIR_LIST, listName);
-	putInternalItem(DIR_LIST, listName, 12*nbElements+LIST_START, content);
-	free(content);
+	list[nbList].nbElements = nbElements;
+	list[nbList].data = calloc(nbElements+1, sizeof(BCDvar));
 }
-/*
+
 List B2C_newList(int nbElements, ...) {
 	List list;
 	va_list vaList;
 	list.nbElements = nbElements;
 	list.data = calloc(nbElements+1, sizeof(BCDvar));
 	va_start(vaList, nbElements);
-	list.data[0] = _0_;
+	//memcpy(list.data[0], _0_, sizeof(BCDvar));
 	for (i = 1; i <= nbElements; i++) {
-		list.data[i] = va_arg(vaList, BCDvar);
+		memcpy(list.data[i], va_arg(vaList, BCDvar), 21);
 	}
 	va_end(vaList);
 	return list;
 }
-*/
+
 void B2C_setDimMat(unsigned char matrix, unsigned short y, unsigned short x) {
-	unsigned char* content = calloc(12*y*x + MAT_START, 1);
-	char matName[] = "MAT_ \0\0";
-	matName[4] = matrix;
-	memcpy(content+8, &y, 2);
-	memcpy(content+10, &x, 2);
-	deleteInternalItem(DIR_MAT, matName);
-	putInternalItem(DIR_MAT, matName, 12*y*x+MAT_START, content);
-	free(content);
+	mat[matrix].width = x;
+	mat[matrix].height = y;
+	mat[matrix].data = calloc((y+1)*(x+1), sizeof(BCDvar));
 }
+
 void B2C_setMat(unsigned char matrix, unsigned int y, unsigned int x, BCDvar *value) {
-	char matName[] = "MAT_ \0\0";
-	unsigned short matWidth;
-	matName[4] = matrix;
-	getItemData("main", matName, 10, 2, &matWidth);
-	overwriteItemData("main", matName, 12, value, MAT_START+12*((y-1)*matWidth+(x-1)));
+	memcpy(mat[matrix].data[mat[matrix].width*y+x], *value, 21);
 }
+
 unsigned int B2C_convToUInt(BCDvar *nb) {
 	unsigned int result = 0;
 	//gets the 3rd digit of the exponent - that means it doesn't work for Uints > 10^10
@@ -336,15 +442,11 @@ void exitTimerHandler() {
 		KillTimer(INTERRUPTION_TIMER);
 		B2C_exit(NO_ERROR);
 	} else {
-		SetTimer(INTERRUPTION_TIMER, 50, exitTimerHandler);
+		SetTimer(INTERRUPTION_TIMER, 50, (void (*)(void))exitTimerHandler);
 	}
 }
 #endif
 void B2C_exit(int exitCode) {
-	/*installTimer(6, (void*)&timerHandler, 1);
-	startTimer(6);
-	GetKey(&key);
-	uninstallTimer(6);*/
 	short menuCode = 0x0308;
 	PopUpWin(4);
 	
@@ -353,10 +455,19 @@ void B2C_exit(int exitCode) {
 			locate(5,3); Print((unsigned char*)"Interruption");
 			break;
 		case MEMORY_ERROR:
-			locate(4,3); Print((unsigned char*)"Erreur m""\xE6""\x0A""moire");
+			locate(4,3); Print((unsigned char*)"Erreur m\xE6""\x0A""moire");
 			break;
 	}
 	locate(4,5); Print((unsigned char*)"Appuyer:[EXIT]");
+	
+	//This syscall could resolve internationalisation problems,
+	//however it seems quite buggy (for example: interrupt by pressing
+	//AC/on, repress this key, then try to go back to the addin; the
+	//popup won't be there and you won't be able to do anything). I also
+	//managed to crash the main menu using this syscall.
+	
+	//dispErrorMessage(exitCode);
+	
 	while (1) {
 		putMatrixCode(&menuCode);
 		do {
@@ -365,28 +476,26 @@ void B2C_exit(int exitCode) {
 	}
 }
 
-BCDvar *B2C_ranInt(BCDvar *a, BCDvar *b) {
-	return &_1_;
-	/*BCDvar result;
+BCDvar *B2C_ranInt(BCDvar *buffer, BCDvar *a, BCDvar *b) {
 	//A + Int (Ran# * (B - A + 1))
 	const char *function = "A""\x89""\xA6""(""\xC1""\xA9""(B""\x99""A""\x89""1))";
-	setAlphaVar('A', &a);
-	setAlphaVar('B', &b);
-	calcExp(&function, dummyOpCode, &result, 1);
-	return result;*/
+	setAlphaVar('A', a);
+	setAlphaVar('B', b);
+	calcExp(&function, dummyOpCode, buffer, 1);
+	return buffer;
 }
-
+/*
 BCDvar *B2C_getAlphaVar(unsigned char var) {
 	getAlphaVar(var, alphaVarBuffer);
 	return &alphaVarBuffer;
 }
-
+*/
 BCDvar *B2C_calcExp(unsigned char* exp) {
 	calcExp(&exp, dummyOpCode, &expressionBuffer, 1);
 	return &expressionBuffer;
 }
-void B2C_setAlphaVar(unsigned char var, BCDvar *value) {
-	setAlphaVar(var, *value);
+void B2C_setAlphaVar(unsigned char variable, BCDvar *value) {
+	memcpy(var[variable], *value, 21);
 }
 void B2C_setStr(Str *value, int isString, int strNum) {
 	free(strings[strNum].data);
@@ -414,7 +523,7 @@ unsigned char* B2C_strToCharArray(Str *str, int isString) {
 Str *B2C_charArrayToStr(unsigned char* charArray) {
 	int strPos = 2;
 	Str *result = malloc(sizeof(Str));
-	result->data = calloc(strlen(charArray)+1, 2);
+	result->data = calloc(strlen((char*)charArray)+1, 2);
 	result->length = 0;
 	for (i = 0; charArray[i]; i++) {
 		if (!(strPos%2) &&

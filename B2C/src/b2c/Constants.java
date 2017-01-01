@@ -13,7 +13,7 @@ public class Constants {
 	 */
 	public static void add(String constant) {
 		constant = constant.replaceAll("\\x99", "-");
-		System.out.println(constant);
+		//System.out.println(constant);
 		if (constant.startsWith(".")) {
 			constant = "0" + constant;
 		}
@@ -38,13 +38,13 @@ public class Constants {
 		//Convert integer to scientific notation using StackOverflow magic
 		//First number apparently means the number of significant digits (including exponent)
 		//Second number is the number of digits after the decimal point (not including exponent)
-		System.out.println(constant);
+		//System.out.println(constant);
 		
 		String sciNotation = String.format("%18.14e", Double.valueOf(constant.replaceAll("\\.", ""))).replace(",", ".");
 		
 		
 		String mantissa = sciNotation.substring(0, sciNotation.indexOf("e")).replaceAll("\\.", "");
-		System.out.println(mantissa);
+		//System.out.println(mantissa);
 		exponent += Integer.valueOf(sciNotation.substring(sciNotation.indexOf('e')+1));
 		
 		//Can't use Integer.valueOf(mantissa) because it might be over 2^32
@@ -57,11 +57,11 @@ public class Constants {
 		if (bcdNotation.contains(".") || bcdNotation.contains("-") || bcdNotation.length() != 18) {
 			Parser.error("Error in BCD conversion of " + constant + " which gave " + bcdNotation);
 		}
-		System.out.println("Result= "+bcdNotation);
+		//System.out.println("Result= "+bcdNotation);
 		//Replace groups of 2 digits by "0x##, " and remove the last comma+space
-		System.out.println(bcdNotation);
+		//System.out.println(bcdNotation);
 		bcdNotation = bcdNotation.replaceAll("(.{2})", "0x$1, ").replaceAll(", $", "");
-		System.out.println(bcdNotation);
+		//System.out.println(bcdNotation);
 		Header.addGlobal("const BCDvar " + Constants.getVarNotation(constant) + " = {" + bcdNotation + "};\n");
 	}
 	
