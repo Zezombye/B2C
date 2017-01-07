@@ -16,7 +16,6 @@ public class G1MParser {
 		int lastCarriageReturn = -1;
 		Parser.instructions.clear();
 		Parser.instructionNumber = 0;
-		Parser.nbBuffers = 0;
 		
 		
 		//Divides the instructions
@@ -38,29 +37,35 @@ public class G1MParser {
 		 * To avoid creating a buffer at each function call,
 		 * as many buffers are created as functions calls in an instruction.
 		 */
-		int nbBuffers = 0;
+		int[] buffers = {0,0,0,0};
 		do {
-			Parser.nbBuffers = 0;
+			for (int i = 0; i < buffers.length; i++) {
+				Parser.buffers[0] = 0;
+			}
 			result.append(Parser.tabs + Parser.parse(Parser.instructions.get(Parser.instructionNumber), Parser.WHOLE_INSTRUCTION) + "\n");
 			Parser.instructionNumber++;
-			if (nbBuffers < Parser.nbBuffers) {
-				nbBuffers = Parser.nbBuffers;
+			for (int i = 0; i < buffers.length; i++) {
+				if (buffers[i] < Parser.buffers[i]) {
+					buffers[i] = Parser.buffers[i];
+				}
 			}
 		} while (Parser.instructionNumber < Parser.instructions.size());
 		
 		//Add buffers
-		String buffers = "\tBCDvar ";
-		for (int i = 0; i < nbBuffers; i++) {
-			buffers += "buffer" + i;
-			if (i+1 < nbBuffers) buffers += ", ";
+		for (int h = 0; h < buffers.length; h++) {
+			String bufferStr = "\t" + Parser.bufferTypes[h] + " ";
+			for (int i = 0; i < buffers[h]; i++) {
+				bufferStr += Parser.bufferVars[h] + i;
+				if (i+1 < buffers[h]) bufferStr += ", ";
+			}
+			bufferStr += ";\n";
+			if (buffers[h] > 0) result.insert(0, bufferStr);
 		}
-		buffers += ";\n";
-		if (nbBuffers > 0) result.insert(0, buffers);
 		result.insert(0, "void prog_"+currentProgram+"() {\n");
 		//result = Parser.autoreplace(result);
 		result.append("}");
-		System.out.println("nb buffers = " + nbBuffers);
-		System.out.println(Parser.nbBuffers);
+		//System.out.println("nb buffers = " + nbBuffers);
+		//System.out.println(Parser.nbBuffers);
 		return result.toString();
 		
 	}

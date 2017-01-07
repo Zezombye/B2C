@@ -99,7 +99,7 @@ BCDvar *B2C_sub(BCDvar *buffer, BCDvar *a, BCDvar *b) {
 	unsigned char tempByte;
 	int result[15] = {0};
 	//Check for special cases
-	//a < 0 and b < 0 -> b-a
+	//a < 0 and b < 0 -> (-b)-(-a)
 	//Ex: (-4)-(-3) -> 3-4
 	if ((*a)[0] > 0x30 && (*b)[0] > 0x30) {
 		BCDvar a2, b2;
@@ -360,13 +360,22 @@ BCDvar *B2C_xor(BCDvar *a, BCDvar *b) {
 	if (!((*a)[1]) != !((*b)[1])) return &_1_;
 	return &_0_;
 }
+
+BCDvar *B2C_int(BCDvar *buffer, BCDvar *a) {
+	const char *function = "\xA6""A";
+	setAlphaVar('A', a);
+	calcExp(&function, dummyOpCode, buffer, 1);
+	
+	return buffer;
+}
+
 unsigned char* B2C_convToStr(BCDvar *nb) {
 	bcdToStr(nb, stringBuffer);
 	return stringBuffer;
 }
 
 void B2C_setListRow(unsigned int nbList, unsigned int row, BCDvar *value) {
-	memcpy(list[nbList].data[row], *value, 21);
+	memcpy(list[nbList].data[row], *value, sizeof(BCDvar)-3);
 }
 
 void B2C_setDimList(unsigned int nbList, unsigned short nbElements) {
@@ -382,20 +391,32 @@ List B2C_newList(int nbElements, ...) {
 	va_start(vaList, nbElements);
 	//memcpy(list.data[0], _0_, sizeof(BCDvar));
 	for (i = 1; i <= nbElements; i++) {
-		memcpy(list.data[i], va_arg(vaList, BCDvar), 21);
+		memcpy(list.data[i], va_arg(vaList, BCDvar), sizeof(BCDvar)-3);
 	}
 	va_end(vaList);
 	return list;
 }
 
-void B2C_setDimMat(unsigned char matrix, unsigned short y, unsigned short x) {
+void B2C_setDimMat(unsigned char matrix, unsigned short x, unsigned short y) {
 	mat[matrix].width = x;
 	mat[matrix].height = y;
-	mat[matrix].data = calloc((y+1)*(x+1), sizeof(BCDvar));
+	mat[matrix].data = calloc(x*y, sizeof(BCDvar));
 }
 
-void B2C_setMat(unsigned char matrix, unsigned int y, unsigned int x, BCDvar *value) {
-	memcpy(mat[matrix].data[mat[matrix].width*y+x], *value, 21);
+void B2C_setMatCase(unsigned char matrix, unsigned int x, unsigned int y, BCDvar *value) {
+	memcpy(mat[matrix].data[mat[matrix].height*(x-1)+y-1], *value, sizeof(BCDvar)-3);
+}
+
+void B2C_fillMat(BCDvar *value, unsigned char matrix) {
+	for (i = 0; i < mat[matrix].width*mat[matrix].height; i++) {
+		memcpy(mat[matrix].data[i], *value, sizeof(BCDvar)-3);
+	}
+}
+
+void B2C_clrMat(unsigned char matrix) {
+	free(mat[matrix].data);
+	mat[matrix].width = 0;
+	mat[matrix].height = 0;
 }
 
 unsigned int B2C_convToUInt(BCDvar *nb) {
@@ -428,7 +449,7 @@ int B2C_convToInt(BCDvar *nb) {
 	}
 	return result;
 }
-BCDvar *B2C_Getkey() {
+BCDvar *B2C_getkey() {
 	if (!prgmGetkey(&getkeyBuffer)) {
 		B2C_exit(NO_ERROR);
 	}
@@ -476,6 +497,22 @@ void B2C_exit(int exitCode) {
 	}
 }
 
+BCDvar *B2C_rand(BCDvar *buffer) {
+	int randDigit;
+	char tempByte;
+	//Initialise exponent to 99 (-1)
+	(*buffer)[0] = 9;
+	tempByte = 0x90;
+	for (i = 0; i < 15; i++) {
+		if (i%2) {
+			tempByte = (rand()%10) << 4;
+		} else {
+			(*buffer)[(i+1)/2+1] = tempByte + (rand()%10);
+		}
+	}
+	return buffer;
+}
+
 BCDvar *B2C_ranInt(BCDvar *buffer, BCDvar *a, BCDvar *b) {
 	//A + Int (Ran# * (B - A + 1))
 	const char *function = "A""\x89""\xA6""(""\xC1""\xA9""(B""\x99""A""\x89""1))";
@@ -494,8 +531,8 @@ BCDvar *B2C_calcExp(unsigned char* exp) {
 	calcExp(&exp, dummyOpCode, &expressionBuffer, 1);
 	return &expressionBuffer;
 }
-void B2C_setAlphaVar(unsigned char variable, BCDvar *value) {
-	memcpy(var[variable], *value, 21);
+void B2C_setAlphaVar(BCDvar *alphaVar, BCDvar *value) {
+	memcpy(*alphaVar, *value, sizeof(BCDvar)-3);
 }
 void B2C_setStr(Str *value, int isString, int strNum) {
 	free(strings[strNum].data);
@@ -602,13 +639,9 @@ Str *B2C_strJoin(Str *str1, Str *str2, int isString1, int isString2) {
 	free_str(str2);
 	return result;
 }
-BCDvar *B2C_strLen(Str *str, int isString) {
-	unsigned char length[4] = {0};
-	BCDvar *result;
-	sprintf(length, "%d", str->length);
-	result = B2C_calcExp(length);
-	free_str(str);
-	return result;
+BCDvar *B2C_strLen(BCDvar *buffer, Str *str, int isString) {
+	intToBCD(str->length, buffer);
+	return buffer;
 }
 Str *B2C_strMid(Str *str, int isString, int start, int offset) {
 	Str *result = malloc(sizeof(Str));

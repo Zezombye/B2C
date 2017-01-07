@@ -4,7 +4,7 @@ import java.util.ArrayList;
 
 public class Constants {
 
-	static ArrayList<Double> consts = new ArrayList<Double>();
+	static ArrayList<String> consts = new ArrayList<String>();
 	
 	/**
 	 * This method is to optimise the speed of B2C by pre-calculating constants.
@@ -12,15 +12,33 @@ public class Constants {
 	 * special things like 1e5, 1/3, etc.
 	 */
 	public static void add(String constant) {
-		constant = constant.replaceAll("\\x99", "-");
+		constant = constant.replaceAll("\\x99|\\x87", "-");
 		//System.out.println(constant);
-		if (constant.startsWith(".")) {
-			constant = "0" + constant;
+		//Interpret "." as "0.", example: -.5 = -0.5
+		constant = constant.replaceAll("(?<!\\d)\\.", "0.");
+		
+		//Remove last ".", example: 85. = 85.0 = 85
+		if (constant.charAt(constant.length()-1) == '.') {
+			constant = constant.substring(0, constant.length()-1);
 		}
-		if (consts.contains(Double.valueOf(constant))) {
+		
+		//Parse special operators
+		//sqrt
+		if (constant.startsWith(new String(new char[]{0x86}))) {
+			String sqrt = String.valueOf(Math.sqrt(Double.valueOf(constant.substring(1))));
+			if (sqrt.length() > 15) {
+				sqrt = sqrt.substring(0, 15);
+			}
+			add(sqrt);
+		}
+		
+		if (!isNumber(constant)) {
+			Parser.error("Constant " + Parser.printNonAscii(constant) + " is not a number!");
+		}
+		if (consts.contains(constant)) {
 			return;
 		}
-		consts.add(Double.valueOf(constant));
+		consts.add(constant);
 		//Calculate the bytes of the constant
 		//Note: can't convert to double due to precision loss
 		//To fix this, we remove the decimal point to convert to integer and keep the exponent
@@ -60,13 +78,32 @@ public class Constants {
 		//System.out.println("Result= "+bcdNotation);
 		//Replace groups of 2 digits by "0x##, " and remove the last comma+space
 		//System.out.println(bcdNotation);
+		
+		//Handle the special case of 0
+		if (Double.valueOf(constant) == 0) {
+			bcdNotation = "000000000000000000"; //18 0s
+		}
 		bcdNotation = bcdNotation.replaceAll("(.{2})", "0x$1, ").replaceAll(", $", "");
 		//System.out.println(bcdNotation);
 		Header.addGlobal("const BCDvar " + Constants.getVarNotation(constant) + " = {" + bcdNotation + "};\n");
 	}
 	
 	public static String getVarNotation(String nb) {
-		return "_"+nb.replaceAll("\\.|\\-|\\x99", "_")+"_";
+		String result;
+		//System.out.println(nb);
+		result = nb.replaceAll("(?<!\\d)\\.", "0.");
+		//System.out.println(result);
+		result = result.replaceAll("\\.|\\-|\\x99|\\x87", "_");
+		//System.out.println(result);
+		//Remove last "."
+		if (result.charAt(result.length()-1) == '.') {
+			result = result.substring(0, result.length()-1);
+		}
+		return "_" + result + "_";
+	}
+	
+	public static boolean isNumber(String nb) {
+		return nb.matches("[\\d\\x99\\x87\\.\\-]+");
 	}
 	
 }

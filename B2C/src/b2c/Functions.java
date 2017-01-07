@@ -182,6 +182,9 @@ public class Functions {
 		addFunctions();
 		String functionsBuffer = IO.readFromRelativeFile("B2CFunctions.c");
 		Integer[] functionsPositions = Parser.parseBrackets(functionsBuffer);
+		if (functionsPositions.length % 4 != 0) {
+			Parser.error("cannot parse functions! Make sure not to have comments between functions (put them inside)");
+		}
 
 		//System.out.println(functionsBuffer.substring(0, functionsPositions[2]));
 		functions += addMethod(functionsBuffer.substring(0, functionsPositions[3]+1));

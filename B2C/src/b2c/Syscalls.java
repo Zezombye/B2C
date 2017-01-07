@@ -10,12 +10,10 @@ public class Syscalls {
 	static String syscallContent = "";
 	static ArrayList<String> syscalls = new ArrayList<String>();
 	static ArrayList<String> syscallIDs = new ArrayList<String>();
-	
 	public static void addSyscall(String syscall, String syscallID) {
 		syscalls.add(syscall);
 		syscallIDs.add(syscallID);
 	}
-	
 	public static void createSyscallFile() {
 		for (int i = 0; i < syscalls.size(); i++) {
 			syscallContent += "\t.export\t_" + syscalls.get(i) + "\n";

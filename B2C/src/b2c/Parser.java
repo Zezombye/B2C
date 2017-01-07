@@ -9,13 +9,19 @@ public class Parser {
 	final static int WHOLE_INSTRUCTION = 1;
 	final static int CONV_TO_BCD = 2;
 	final static int CONV_TO_INT = 3;
-
+	
+	final static int BCD_BUFFER = 0;
+	final static int STR_BUFFER = 1;
+	final static int LIST_BUFFER = 2;
+	final static int MAT_BUFFER = 3;
+	final static String[] bufferVars = {"bcdBuffer", "strBuffer", "listBuffer", "matBuffer"};
+	final static String[] bufferTypes = {"BCDvar", "Str", "List", "Mat"};
 	static String tabs = "\t";
 	
 	//Be sure to clear these variables between programs.
 	static ArrayList<String> instructions = new ArrayList<String>();
 	static int instructionNumber = 0;
-	static int nbBuffers = 0;
+	static int[] buffers = {0,0,0,0};
 	
 	
 	public static String parse(String content) {
@@ -37,22 +43,8 @@ public class Parser {
 	 */
 	
 	public static String parse(String content, int option) {
-		
-		String instruction = "";
-		for (int i = 0; i < content.length(); i++) {
-			if (content.charAt(i) >= 32 && content.charAt(i) < 127) {
-				instruction += content.charAt(i) + " ";
-			} else {
-				String hex = Integer.toHexString(content.charAt(i));
-				instruction += "0x" + hex + " ";
-				if (hex.length() > 2) {
-					error("Unhandled unicode character u+" + hex.length());
-				}
-			}
-		}
-		System.out.println("Parsing instruction: " + instruction);
-		
-		
+				
+		System.out.println("Parsing instruction: " + printNonAscii(content));		
 
 		if (content.equals("")) {
 			return "";
@@ -69,43 +61,49 @@ public class Parser {
 		matchResult = checkMatch(content, ":");
 		if (matchResult >= 0) {
 			instructions.add(instructionNumber, content.substring(matchResult+1));
+			instructionNumber++;
 			return parse(content.substring(0, matchResult), WHOLE_INSTRUCTION) + "\n" + tabs + 
 					parse(content.substring(matchResult+1), WHOLE_INSTRUCTION);
 		}
-		
-		if (content.startsWith("\"") && option == WHOLE_INSTRUCTION) {
-			System.out.println("Hardcoded string detected, removing it...");
-			return "";
+				
+		if (startsWithStringFunction(content)) {
+			if (option == WHOLE_INSTRUCTION) {
+				error("B2C does not support standalone strings!");
+			} else {
+				return parseStr(content);
+			}
 		}
-		
-		
 		
 		//The easy functions: those that always have their arguments after, AND that don't return anything. (exception of =>)
 		//Functions like Int or Frac have their arguments after but return a value so they can be used in a calculation.
 		//Those are listed in the alphabetical order of their opcodes. 
-		//So List (0x7F51) is above Lbl (0xE2) which is above If (0xF700). (again, exception of => which is after IfEnd)
-				
-		//RanInt#(
-		if (content.startsWith(new String(new char[]{0x7F,0x87}))) {
+		//So Fill (0x7F47) is above Lbl (0xE2) which is above If (0xF700). (again, exception of => which is after IfEnd)
+		
+		//Fill(
+		if (content.startsWith(new String(new char[]{0x7F,0x47}))) {
 			if (content.charAt(content.length()-1) == ')') {
 				content = content.substring(0, content.length()-1);
 			}
 			Integer[] args = parseArgs(content);
 			if (args.length != 1) {
-				error("RanInt# method doesn't have 2 arguments!");
+				error("Fill method doesn't have 2 arguments!");
 			}
-			return supportAns("B2C_ranInt(" + addBuffer() + ", " + parse(content.substring(2, args[0]), CONV_TO_BCD) + ","
-					+ parse(content.substring(args[0]+1), CONV_TO_BCD) + ")", option);
+			if (content.substring(args[0]+1).startsWith(new String(new char[]{0x7F,0x40}))) {
+				return "B2C_fillMat(" + parse(content.substring(2, args[0]), CONV_TO_BCD) + ", "
+					+ parse(content.substring(args[0]+1), CONV_TO_BCD) + ");";
+			} else if (content.substring(args[0]+1).startsWith(new String(new char[]{0x7F,0x51}))) {
+				return "B2C_fillList(" + parse(content.substring(2, args[0]), CONV_TO_BCD) + ", "
+						+ parse(content.substring(args[0]+1), CONV_TO_BCD) + ");";
+			} else {
+				error("2nd argument of Fill isn't a Mat or a List!");
+			}
+			
 			
 		}
 		
-		//Getkey
-		if (content.startsWith(new String(new char[]{0x7F,0x8F}))) {
-			if (content.length() > 2) {
-				error("Instruction begins by GetKey but includes something else!");
-			}
-			
-			return supportAns("B2C_Getkey()", option);
+		//unary plus = no purpose
+		if (content.startsWith(new String(new char[]{0x89}))) {
+			return parse(content.substring(1), option);
 		}
 		
 		//Lbl
@@ -333,6 +331,13 @@ public class Parser {
 			return "ML_clear_vram();";
 		}
 		
+		//ClrMat
+		if (content.startsWith(new String(new char[]{0xF9,0x1E}))) {
+			if (content.length() != 3) {
+				error("Invalid argument for ClrMat!");
+			}
+			return "B2C_clrMat(" + getMat(content.charAt(2)) +  ");";
+		}
 		
 		
 		//End of starting functions. At this point the instruction is likely a mathematical operation, or a string,
@@ -385,7 +390,7 @@ public class Parser {
 			} else if (content.substring(matchResult+1).matches("[A-Z]~[A-Z]")) {
 				String assignment = parse(content.substring(0, matchResult), CONV_TO_BCD);
 				incrementTabs();
-				String result = "for (i = "+getAlphaVar(content.charAt(matchResult+1))+"; i <= "+getAlphaVar(content.charAt(matchResult+3))+"; i++) {\n"+tabs+"B2C_setAlphaVar(i, "+assignment+");\n";
+				String result = "for (i = '"+content.charAt(matchResult+1)+"'; i <= '"+content.charAt(matchResult+3)+"'; i++) {\n"+tabs+"B2C_setAlphaVar(i, "+assignment+");\n";
 				decrementTabs();
 				return result + tabs + "}";
 			
@@ -416,7 +421,7 @@ public class Parser {
 				if (check.length != 1) {
 					error("Mat instruction does not have one comma!");
 				}
-				String result = "B2C_setMat(" + (content.charAt(matchResult+3)-'A') + ", " +
+				String result = "B2C_setMatCase(" + getMat(content.charAt(matchResult+3)) + ", " +
 						handleIntConversion(content.substring(matchResult+5, matchResult+5+check[0])) + ", " +
 						handleIntConversion(content.substring(matchResult+5+check[0]+1, content.length()-1)) + ", " +
 						parse(content.substring(0, matchResult), CONV_TO_BCD) + ");";
@@ -452,33 +457,54 @@ public class Parser {
 		//at this point it is a mathematical operation
 		//stock the level of the parentheses
 		Integer[] parenthesesPos = parseBrackets(content);
+		//System.out.println(Arrays.toString(parenthesesPos));
 
 		//Mat
 		if (content.startsWith(new String(new char[]{0x7F,0x40}))) {
 			System.out.println("Parsing a matrix");
-			//Before parsing, we must check if the entire instruction is a Mat instruction
+			
+			//Before parsing, we must check if the Mat instruction does not include dimensions
+			if (content.length() == 3) {
+				String str = getMat(content.charAt(2));
+				if (option == WHOLE_INSTRUCTION) {
+					str = "B2C_setMat(" + getMat((char)0xC0) + ", " + str + ");";
+				}
+				return str;
+			}
+			
 			Integer[] check = parseBrackets(content);
 			Integer[] arg = parseArgs(content.substring(check[0]+1, check[1]));
 			if (check[1] == content.length()-1) {
 				if (arg.length != 1) {
 					error("matrix coordinates are fewer or more than two!");
 				} else {
-					return supportAns("&mat[" + (content.charAt(2)-'A') + "].data[mat[" + (content.charAt(2)-'A') + "].width*(" 
+					return supportAns("&mat[" + getMat(content.charAt(2)) + "].data[mat[" + getMat(content.charAt(2)) + "].height*(" 
 							/*+ handleIntConversion(parse(content.substring(check[0]+1, check[0]+1+arg[0]))) + ")+("
 							+ handleIntConversion(parse(content.substring(check[0]+2+arg[0],content.length()-1))) + ")]", option);*/
-							+ handleIntConversion(content.substring(check[0]+1, check[0]+1+arg[0])) + ")+("
-							+ handleIntConversion(content.substring(check[0]+2+arg[0],content.length()-1)) + ")]", option);
+							+ handleIntConversion(content.substring(check[0]+1, check[0]+1+arg[0])) + "-1)+("
+							+ handleIntConversion(content.substring(check[0]+2+arg[0],content.length()-1)) + "-1)]", option);
 				}
 				
 			}
 			
 		}
 		
-		//Dim ; for now it cannot parse it automatically, need to wait for the getNextArg() function
-		//TODO do getNextArg()
+		//Dim
 		if (content.startsWith(new String(new char[]{0x7F,0x46}))) {
 			
-			return "Dim " + parse(content.substring(2));
+			//If it is Dim Mat
+			if (content.substring(2).startsWith(new String(new char[]{0x7F, 0x40}))) {
+				String result = "B2C_getDimMat(" + getMat(content.charAt(4)) + ")";
+				if (option == WHOLE_INSTRUCTION) 
+					return "B2C_setList(LIST_ANS, " + result + ");";
+				return result;
+				
+			//If it is Dim List
+			} else if (content.substring(2).startsWith(new String(new char[]{0x7F, 0x40}))) {
+				return supportAns("&list["+getList(content.substring(2)) + "].nbElements", option);
+			} else {
+				error("Dim instruction is not followed by List or Mat!");
+			}
 			
 		}
 		
@@ -488,11 +514,18 @@ public class Parser {
 			//Before parsing, we must check if the entire instruction is a List instruction
 			Integer[] check = parseBrackets(content);
 			
+			if (check.length == 0) {
+				String result = getList(content.substring(2));
+				if (option == WHOLE_INSTRUCTION) 
+					return "B2C_setList(LIST_ANS, " + result + ");";
+				return result;
+			}
+			
 			if (check.length == 2 && check[1] == content.length()-1 || option == WHOLE_INSTRUCTION && check.length > 0) {
 				if (check.length == 2 && check[1] == content.length()-1) {
 					content = content.substring(0, content.length()-1);
 				}
-				return supportAns("list[" + handleIntConversion(parse(content.substring(2, check[0]))) + "].data[" 
+				return supportAns("list[" + getList(content.substring(2, check[0])) + "].data[" 
 						+ handleIntConversion(parse(content.substring(check[0]+1, content.length()))) + "]", option);
 			}
 		}
@@ -506,32 +539,44 @@ public class Parser {
 						//test if the operator is not within parentheses
 						boolean isInParentheses = false;
 						for (int k = 0; k < parenthesesPos.length; k+=2) {
-							if (j >= parenthesesPos[k] && j <= parenthesesPos[k+1]) {
+							if (j-Operators.operators[h][i].getCasioChar().length() >= parenthesesPos[k] && j-Operators.operators[h][i].getCasioChar().length() <= parenthesesPos[k+1]) {
 								isInParentheses = true;
 							}
 						}
 						System.out.println("Parsing operator: " + Operators.operators[h][i].getAsciiFunction());
 						//If the operator is at the beginning of the string, it isn't a binary operator
-						if (!isInParentheses && (j != 0 && Operators.operators[h][i].getNbOperands() != 1)) {
+						if (!isInParentheses && (j != Operators.operators[h][i].getCasioChar().length() || Operators.operators[h][i].getNbOperands() == 1)) {
 							String str = "";
-							
+							//System.out.println("Found the above operator");
 							str += Operators.operators[h][i].getAsciiFunction() + "(";
-	
-							//If it is a mathematical operation (pow, mult, div, add, sub, sqrt)
-							if (str.startsWith("B2C_pow(") || str.startsWith("B2C_sqrt(") || str.startsWith("B2C_mult(") ||
-									str.startsWith("B2C_div(") || str.startsWith("B2C_add(") || str.startsWith("B2C_sub(")) {
-								str += addBuffer() + ", ";
+							
+							//Check for special of unary plus operator (which does nothing)
+							/*if (str.equals("B2C_unaryPlus(")) {
+								return parse(content.substring(1), option);
+							}*/
+							
+							//If it is a mathematical operation
+							if (Operators.operators[h][i].isMathematicalFunction()) {
+								str += addBCDBuffer() + ", ";
 							}
-							if (!str.startsWith("B2C_not(")) {
-								str += parse(content.substring(0, j-Operators.operators[h][i].getCasioChar().length()), CONV_TO_BCD) + ", " + parse(content.substring(j), CONV_TO_BCD) + ")";
+							
+							if (Operators.operators[h][i].getNbOperands() != 1) {
+								str += parse(content.substring(0, j-Operators.operators[h][i].getCasioChar().length()), CONV_TO_BCD) + ", " + parse(content.substring(j), CONV_TO_BCD);
 							} else {
-								str += "B2C_not(" + parse(content.substring(2)) + ")";
+								//If it is an unary operator, check if we can convert them as a constant
+								if (content.matches("[\\d\\x99\\x87\\.\\x86]+")) {
+									//System.out.println("convert to const");
+									Constants.add(content);
+									return supportAns("&"+Constants.getVarNotation(content), option);
+								} else {
+									str += parse(content.substring(j), CONV_TO_BCD);
+								}
 							}
-							if (option == WHOLE_INSTRUCTION) {
-								str += ";";
-							}
-							return str;
-						}
+							str += ")";
+							return supportAns(str, option);
+						}/* else {
+							System.out.println("Operator was in parenthesis, ignoring it");
+						}*/
 						
 					}
 					/*if (isMultibytePrefix(content.charAt(j))) {
@@ -541,19 +586,15 @@ public class Parser {
 			}
 		}
 		
-		//this only occurs if the entire string is within parentheses, such as "(2+3)"
-		if (parenthesesPos.length == 2 && parenthesesPos[0] == 0 && parenthesesPos[1] == content.length()-1) {
-			return "(" + parse(content.substring(1, content.length()-1)) + ")";
-		}
+		
 		
 		//replace variables with their position in the var[] array; only do this if the string only contains the variable
-		if (content.length() == 1 && !content.matches("^\\d")) {
-			String result = "&var[" + getAlphaVar(content) + "]";
-			return supportAns(result, option);
+		if (content.matches("[A-Z\\xCD\\xCE\\xC0]")) {
+			return handleAlphaVar(content, option);
 		}
 		
 		//Test if it is a number (note that it can be something like 2X, implicit multiplication)
-		if (content.matches("^[\\d\\x99\\.](.+)?")) {
+		if (content.matches("^[\\d\\x99\\x87\\.](.+)?")) {
 			int testForImplicitMultiplication = -1;
 			for (char i = '0'; i <= '9'; i++) {
 				if (testForImplicitMultiplication < content.lastIndexOf(i)) {
@@ -561,8 +602,7 @@ public class Parser {
 				}
 			}
 			if (testForImplicitMultiplication != content.length()-1) {
-				return supportAns("B2C_mult(" + parse(content.substring(0, testForImplicitMultiplication+1), CONV_TO_BCD) +
-						", " + parse(content.substring(testForImplicitMultiplication+1, content.length())) + ")", option);
+				return parse(content.substring(0, testForImplicitMultiplication+1) + (char)0xA9 + content.substring(testForImplicitMultiplication+1, content.length()));
 			}
 			//At this point it is a number, add it to constants
 			Constants.add(content);
@@ -584,9 +624,63 @@ public class Parser {
 			}
 			return result;
 		}
-		
+				
 		//At this point it is a calculation, check for calculations functions
-		String result = "";
+		//Any function that returns a BCD value must be here! (GetKey, RanInt...)
+		//Don't forget to add the buffer!
+		
+		//RanInt#(
+		if (content.startsWith(new String(new char[]{0x7F,0x87}))) {
+			if (content.charAt(content.length()-1) == ')') {
+				content = content.substring(0, content.length()-1);
+			}
+			Integer[] args = parseArgs(content);
+			if (args.length != 1) {
+				error("RanInt# method doesn't have 2 arguments!");
+			}
+			return supportAns("B2C_ranInt(" + addBCDBuffer() + ", " + parse(content.substring(2, args[0]), CONV_TO_BCD) + ","
+					+ parse(content.substring(args[0]+1), CONV_TO_BCD) + ")", option);
+			
+		}
+		
+		//Getkey
+		if (content.startsWith(new String(new char[]{0x7F,0x8F}))) {
+			if (content.length() > 2) {
+				error("Instruction begins by GetKey but includes something else!");
+			}
+			
+			return supportAns("B2C_getkey(" + addBCDBuffer() + ")", option);
+		}
+		
+		//Not
+		if (content.startsWith(new String(new char[]{0x7F,0xB3}))) {
+			
+			return supportAns("B2C_not(" + parse(content.substring(1, CONV_TO_BCD) + ")"), option);
+		}
+		
+		//Int
+		if (content.startsWith(new String(new char[]{0xA6}))) {
+			if (content.length() == 1) {
+				error("Int instruction is standalone!");
+			}
+			return supportAns("B2C_int(" + addBCDBuffer() + ", " + parse(content.substring(1), CONV_TO_BCD) + ")", option);
+		}
+		
+		//Ran#
+		if (content.startsWith(new String(new char[]{0xC1}))) {
+			if (content.length() != 1) {
+				error("Ran# instruction includes something else!");
+			}
+			return supportAns("B2C_rand(" + addBCDBuffer() + ")", option);
+		}
+
+		//this only occurs if the entire string is within parentheses, such as "(2+3)"
+		if (parenthesesPos.length == 2 && parenthesesPos[0] == 0 && parenthesesPos[1] == content.length()-1) {
+			return "(" + parse(content.substring(1, content.length()-1)) + ")";
+		}
+				
+		
+		/*String result = "";
 		if (content.matches("\\d+")) {
 			//Parse numbers as a global variable (for example, 36 is replaced by a const BCDvar _36 which value is calculated at the beginning).
 			if (!Constants.consts.contains(Integer.parseInt(content))) {
@@ -597,8 +691,8 @@ public class Parser {
 			//Check if it is a lone variable
 		} else if (content.matches("[A-Z\\xCD\\xCE\\xC0]")) {
 			result += handleAlphaVar(content, option);
-			return result;
-		} /*else {
+			return result;*/
+		/*} else {
 			result += "B2C_calcExp((unsigned char*)" + parseStr("\"" + content + "\"") + ")";
 			return result;
 		}*/
@@ -607,11 +701,12 @@ public class Parser {
 		//At this point in the code, the method must have already returned
 		//if it has detected at least one instruction it understands
 		
-		error("function in the instruction above not recognized!");
-		return "";
+		error("function not recognized! " + printNonAscii(content));
+		return "===COMPILATION ERROR===";
 	}
 	
-	/* This function is called to parse hardcoded lists (written like {1,2,3}).
+	/**
+	 * This function is called to parse hardcoded lists (written like {1,2,3}).
 	 * At the moment the only functions calling this method are:
 	 * - Assignment operation on Dim Mat ({1,2}->Dim Mat M)
 	 * - Assignment operation on List ({1,2}->List 3)
@@ -654,8 +749,9 @@ public class Parser {
 		return result.substring(0, result.length()-2) + ")";
 	}
 	
-	/* This method checks for the presence of the string match in the string content.
-	 * This can't be done with traditional methods because it must checks if the match
+	/** 
+	 * This method checks for the presence of the string match in the string content.
+	 * This can't be done with traditional methods because it must check if the match
 	 * string is in the content string AND not in a string.
 	 * 
 	 * Returns -1 if the value doesn't exist, or the beginning of the first occurence of the match.
@@ -666,7 +762,6 @@ public class Parser {
 	 * because there is a '=>' but inside a string.
 	 * 
 	 * checkMatch("A>B => Locate 1,1,C", "=>") will return 4.
-	 * 
 	 */
 	
 	public static int checkMatch(String content, String match) {
@@ -741,7 +836,8 @@ public class Parser {
 		return content;
 	}
 	
-	/* This method parses a string. It is designed to parse things like:
+	/** 
+	 * This method parses a string. It is designed to parse things like:
 	 * Str 1 + "test" + Str 2
 	 * 
 	 * The main parse() method only calls this method in case of an argument that is always a string,
@@ -750,13 +846,56 @@ public class Parser {
 	 */
 	
 	public static String parseStr(String content) {
-		System.out.println("Parsing string: "+content);
-		if (content.startsWith("\"")/* || content.startsWith(new String(new char[]{0xF9, 0x3F}))*/) {
-			if (content.startsWith("\"") && content.charAt(content.length()-1) != '"') {
-				content += '"';
+		System.out.println("Parsing string: "+printNonAscii(content));
+		if (startsWithStringFunction(content)) {
+			
+			//Parse operators
+			//It is easy because the only operator is the '+'
+			Integer[] parenthesesPos = parseBrackets(content);
+			for (int i = content.length()-1; i >= 0; i--) {
+				if (content.substring(0, i).endsWith(new String(new char[]{0x89}))) {
+					//test if the operator is not within parentheses
+					boolean isInParentheses = false;
+					for (int k = 0; k < parenthesesPos.length; k+=2) {
+						if (i-1 >= parenthesesPos[k] && i-1 <= parenthesesPos[k+1]) {
+							isInParentheses = true;
+						}
+					}
+					System.out.println("Parsing concatenation operator (+)");
+					
+					if (!isInParentheses) {
+						String str = "B2C_strcat(";
+						str += parse(content.substring(0, i-1)) + ", " + parse(content.substring(i));
+						str += ")";
+						return str;
+					}
+				}
 			}
-			content = replaceNonAscii(content);
-			return content; //TODO parse Str function
+			
+			//Note that standalone strings aren't supported, there is no Str Ans; therefore, no ';'!
+			
+			//Plain strings
+			if (content.startsWith("\"")) {
+				if (content.charAt(content.length()-1) != '"') {
+					content += '"';
+				}
+				content = replaceNonAscii(content);
+				return content;
+			}
+			
+			//All subsequent str functions have parenthesis, so check if there is the right number
+			if (parenthesesPos.length != 2) {
+				error("Str function does not have one level of parenthesis!");
+			}
+			
+			//Str function
+			if (content.startsWith(new String(new char[]{0xF9, 0x3F}))) {
+				return getStr(content.substring(2));
+			}
+			//StrRotate
+			if (content.startsWith(new String(new char[]{0xF9, 0x3D}))) {
+				return "B2C_strRotate(" + addStrBuffer() + parse(content.substring(2, parenthesesPos[0])) + ")"; 
+			}
 		}
 		return "B2C_convToStr(" + handleAlphaVar(content, NO_OPTION) + ")";
 	}
@@ -784,7 +923,8 @@ public class Parser {
 		return content;
 	}
 	
-	/* This method parses comma-separated arguments. It is used to parse any function
+	/**
+	 * This method parses comma-separated arguments. It is used to parse any function
 	 * with those kind of arguments. It is needed because the arguments themselves may have
 	 * commas (example: Locate 1,Mat M[A,B],Str 1).
 	 * 
@@ -824,13 +964,27 @@ public class Parser {
 	 * This function returns the index of each first-level opening and closing brackets/parentheses.
 	 * Example: the string "3*(4*(5+6))+(4*5)" will return {2, 10, 12, 16}.
 	 * It accounts for unmatched brackets at the end, so "2->Mat M[1,3" will return the same as "2->Mat M[1,3]".
+	 * When adding an opcode containing parenthesis, make sure to include it in this function.
 	 */
 	public static Integer[] parseBrackets(String content) {
 		ArrayList<Integer> bracketsPos = new ArrayList<Integer>();
 		int bracketsLevel = 0;
 		boolean currentPositionIsString = false;
 		for (int i = 0; i < content.length(); i++) {
-			if ((content.charAt(i) == '(' || content.charAt(i) == '[' || content.charAt(i) == '{') && !currentPositionIsString) {
+			if (!currentPositionIsString && (content.charAt(i) == '(' || content.charAt(i) == '[' || content.charAt(i) == '{' ||
+					//Check for opcodes that contains parenthesis
+					content.startsWith(new String(new char[]{0x7F, 0x87}), i) || //RanInt#(
+					content.startsWith(new String(new char[]{0x7F, 0x47}), i) || //Fill(
+					content.startsWith(new String(new char[]{0xF9, 0x30}), i) || //StrJoin(
+					content.startsWith(new String(new char[]{0xF9, 0x34}), i) || //StrLeft(
+					content.startsWith(new String(new char[]{0xF9, 0x35}), i) || //StrRight(
+					content.startsWith(new String(new char[]{0xF9, 0x36}), i) || //StrMid(
+					content.startsWith(new String(new char[]{0xF9, 0x39}), i) || //StrUpr(
+					content.startsWith(new String(new char[]{0xF9, 0x3A}), i) || //StrLwr(
+					content.startsWith(new String(new char[]{0xF9, 0x3B}), i) || //StrInv(
+					content.startsWith(new String(new char[]{0xF9, 0x3C}), i) || //StrShift(
+					content.startsWith(new String(new char[]{0xF9, 0x3D}), i) //StrRotate(
+					)) {
 				bracketsLevel++;
 				if (bracketsLevel == 1) {
 					bracketsPos.add(i);
@@ -917,6 +1071,31 @@ public class Parser {
 			return true;
 		return false;
 	}
+	/**
+	 * Returns true if the given string starts with a string function.
+	 * That means that Str, StrLwr, StrShift, '"', ... return true,
+	 * but not StrLen, StrCmp or StrSrc as they return BCDvars!
+	 * 
+	 * The function must be the function alone, if there is something else then
+	 * it will return false.
+	 */
+	public static boolean startsWithStringFunction(String function) {
+		if (function.startsWith(new String(new char[]{0xF9, 0x30})) || //StrJoin(
+				function.startsWith(new String(new char[]{0xF9, 0x34})) || //StrLeft(
+				function.startsWith(new String(new char[]{0xF9, 0x35})) || //StrRight(
+				function.startsWith(new String(new char[]{0xF9, 0x36})) || //StrMid(
+				function.startsWith(new String(new char[]{0xF9, 0x39})) || //StrUpr(
+				function.startsWith(new String(new char[]{0xF9, 0x3A})) || //StrLwr(
+				function.startsWith(new String(new char[]{0xF9, 0x3B})) || //StrInv(
+				function.startsWith(new String(new char[]{0xF9, 0x3C})) || //StrShift(
+				function.startsWith(new String(new char[]{0xF9, 0x3D})) || //StrRotate(
+				function.startsWith(new String(new char[]{0xF9, 0x3F})) || //Str
+				function.charAt(0) == '"'
+				) {
+			return true;
+		}
+		return false;
+	}
 	
 	public static String supportAns(String content, int option) {
 		if (option == WHOLE_INSTRUCTION) 
@@ -936,7 +1115,7 @@ public class Parser {
 	public static String handleAlphaVar(String content, int option) {
 		//Handle var such that var[char-'A'] gives the correct variable
 		if (content.matches("[A-Z\\xCD\\xCE\\xC0]")) {
-			String result = "&var[" + getAlphaVar(content) + "]";
+			String result = getAlphaVar(content);
 			return supportAns(result, option);
 		}
 		return parse(content, option);
@@ -951,30 +1130,86 @@ public class Parser {
 	
 	public static String getAlphaVar(char var) {return getAlphaVar(""+var);}
 	public static String getAlphaVar(String var) {
+		String result = "VAR_";
 		if (var.length() != 1) {
 			error("Unknown var!");
 		} else if (var.charAt(0) >= 'A' && var.charAt(0) <= 'Z') {
-			return var;
+			result += String.valueOf(var.charAt(0)-'A');
 		} else if (var.charAt(0) == 0xCD) {
-			return "RADIUS";
+			result += "RADIUS";
 		} else if (var.charAt(0) == 0xCE) {
-			return "THETA";
+			result += "THETA";
 		} else if (var.charAt(0) == 0xC0) {
-			return "ANS";
+			result += "ANS";
+		} else {
+			error("Unknown var!");
 		}
-		error("Unknown var!");
-		return "";
+		return result;
 	}
 	
-	public static String addBuffer() {
-		String result = "&buffer" + nbBuffers;
-		nbBuffers++;
+	public static String getMat(char mat) {
+		String result = "MAT_";
+		if (mat >= 'A' && mat <= 'Z') {
+			result += (mat-'A');
+		} else if (mat == 0xC0) {
+			result += "ANS";
+		} else {
+			error("Unknown mat "+mat+"!");
+		}
 		return result;
+	}
+	public static String getList(String list) {
+		if (list.length() == 1 && list.charAt(0) == 0xC0) {
+			return "LIST_ANS";
+		} else {
+			return handleIntConversion(parse(list));
+		}
+	}
+	public static String getStr(String str) {
+		if (str.length() > 2) {
+			error("Invalid str " + str + "!");
+		}
+		try {
+			int strno = Integer.valueOf(str);
+			if (strno < 1 || strno > 20) {
+				error("Invalid str number " + strno + "!");
+			}
+		} catch (NumberFormatException e) {
+			error("Invalid str " + str + "!");
+		}
+		return "&str["+Integer.valueOf(str)+"]";
 		
 	}
 	
+	public static String addBCDBuffer() {return addBuffer(BCD_BUFFER);}
+	public static String addStrBuffer() {return addBuffer(STR_BUFFER);}
+	public static String addMatBuffer() {return addBuffer(MAT_BUFFER);}
+	public static String addListBuffer() {return addBuffer(LIST_BUFFER);}
+	
+	public static String addBuffer(int buffer) {
+		String result = "&" + bufferVars[buffer] + buffers[buffer];
+		buffers[buffer]++;
+		return result;
+	}
+	
+	public static String printNonAscii(String content) {
+		String result = "";
+		for (int i = 0; i < content.length(); i++) {
+			if (content.charAt(i) >= 32 && content.charAt(i) < 127) {
+				result += content.charAt(i) + " ";
+			} else {
+				String hex = Integer.toHexString(content.charAt(i));
+				result += "0x" + hex + " ";
+				if (hex.length() > 2) {
+					error("Unhandled unicode character u+" + hex);
+				}
+			}
+		}
+		return result;
+	}
+	
 	public static void error(String error) {
-		System.out.println("\n===ERROR: "+error+"===\n");
+		System.out.println("\nERROR: "+error+"\n");
 		System.exit(0);
 	}
 }

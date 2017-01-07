@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.io.File;
 import java.io.IOException;
+import java.util.Random;
 import java.util.Scanner;
 
 /* TODO 's:
@@ -18,8 +19,8 @@ public class B2C {
 	final static boolean debugMode = true;
 	
 	static String path = "C:\\Users\\Catherine\\Documents\\CASIO\\fx-9860G SDK\\TestB2C\\";
-	static String mainProgramName = "__uiss4_";
-	static String pathToG1M = "C:\\Users\\Catherine\\Desktop\\puiss4.g1m";
+	static String mainProgramName = "DEMNR";
+	static String pathToG1M = "C:\\Users\\Catherine\\Desktop\\goldroad.g2m";
 	static boolean isRealTimeGame = true;
 	static boolean assureOS1Compatibility = true;
 	static boolean usesAcOnTimer = true;
@@ -84,6 +85,7 @@ public class B2C {
 		}
 		long startTime = System.currentTimeMillis();
 		
+		Operators.initOperators();
 		//Add some constants for functions
 		Constants.add("0");
 		Constants.add("1");
@@ -107,7 +109,7 @@ public class B2C {
 				"int i;\n"+
 				"BCDvar var[29] = {0}; //A-Z, r, theta, Ans\n"+
 				"Str strings[20];\n" + 
-				"Mat mat[26]; //Important thing: matrixes are (height, width) not (width, height)\n" +
+				"Mat mat[27]; //Important thing: matrixes are (height, width) not (width, height)\n" +
 				"List list[26];\n" +
 				"char dummyOpCode[2] = {5, 8};\n" +
 				"//These are buffers for syscalls that do not return a value.\n" +
@@ -124,6 +126,7 @@ public class B2C {
 					"\tfor (i = 0; i < 20; i++) {\n" +
 						"\t\tstrings[i].length = 0;\n" +
 					"\t}\n" +
+					"\tsrand((unsigned int)" + new Random().nextInt() + ");\n" +
 					"\t#ifdef USES_INTERRUPTION_TIMER\n" +
 					"\t//Timer allowing AC/ON to be pressed at any moment\n" +
 					"\tSetTimer(INTERRUPTION_TIMER, 50, (void (*)(void))exitTimerHandler);\n" +
@@ -201,9 +204,9 @@ public class B2C {
 		for (int i = 0; i <= 1; i++) {
 			IO.writeToFile(new File(path+externalLibs[i]), IO.readFromRelativeFile(externalLibs[i]), true);
 		}
-		for (char c = 'A'; c <= 'Z'; c++) {
-			Header.addDefine(c+" "+(int)c);
-		}
+		/*for (char c = 'A'; c <= 'Z'; c++) {
+			Header.addDefine(c+" "+(c-'A'));
+		}*/
 		Header.addDefine("FALSE 0");
 		Header.addDefine("TRUE 1");
 		Header.addDefine("A_GREATER_THAN_B 1");
@@ -232,7 +235,7 @@ public class B2C {
 		
 		Header.addDefine("free_str(x) if(!isString){free(x->data); free(x);}");
 		Header.addDefine("getDigit(BCDvar, i) (((i)%2) ? (*(BCDvar))[((i)+1)/2+1]>>4 : (*(BCDvar))[((i)+1)/2+1]&0x0F)");
-		Header.addDefine("getExp(BCDvar) (((*(a))[0]>>4) * 100 + ((*(a))[0]&0x0F) * 10 + ((*(a))[1]>>4))");
+		Header.addDefine("getExp(BCDvar) (((*(BCDvar))[0]>>4) * 100 + ((*(BCDvar))[0]&0x0F) * 10 + ((*(BCDvar))[1]>>4))");
 		Header.create();
 		
 		System.out.println("Parsing done in " + (System.currentTimeMillis()-startTime) + " ms.");
