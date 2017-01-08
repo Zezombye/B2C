@@ -54,7 +54,7 @@ public class IO {
 		byte[] encoded;
 		try {
 			encoded = Files.readAllBytes(Paths.get(path));
-			content = new String(encoded, "Cp1252");
+			content = new String(encoded, "ISO-8859-1");
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
@@ -62,7 +62,7 @@ public class IO {
 		content = content.substring(32);
 		
 		//due to unicode encoding, some characters get encoded as others
-		
+		/*
 		content = content.replaceAll("\\u2020", new String(new char[]{0x86}));
 		content = content.replaceAll("\\u2021", new String(new char[]{0x87}));
 		content = content.replaceAll("\\u02C6", new String(new char[]{0x88}));
@@ -74,6 +74,7 @@ public class IO {
 		content = content.replaceAll("\\u0161", new String(new char[]{0x9A}));
 		content = content.replaceAll("\\u203A", new String(new char[]{0x9B}));
 		content = content.replaceAll("\\u017E", new String(new char[]{0x9E}));
+		*/
 		//TODO actually parse the g1m
 		String[] programs = content.split("PROGRAM[\\s\\S]{13}system[\\s\\S]{2}");
 		

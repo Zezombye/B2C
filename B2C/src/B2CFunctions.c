@@ -478,6 +478,9 @@ void B2C_exit(int exitCode) {
 		case MEMORY_ERROR:
 			locate(4,3); Print((unsigned char*)"Erreur m\xE6""\x0A""moire");
 			break;
+		case ARG_ERROR:
+			locate(4,3); Print((unsigned char*)"Erreur argument");
+			break;
 	}
 	locate(4,5); Print((unsigned char*)"Appuyer:[EXIT]");
 	
@@ -534,106 +537,153 @@ BCDvar *B2C_calcExp(unsigned char* exp) {
 void B2C_setAlphaVar(BCDvar *alphaVar, BCDvar *value) {
 	memcpy(*alphaVar, *value, sizeof(BCDvar)-3);
 }
-void B2C_setStr(Str *value, int isString, int strNum) {
-	free(strings[strNum].data);
-	strings[strNum].length = value->length;
-	strings[strNum].data = malloc((value->length+2)*2);
-	strings[strNum].data[(value->length+1)*2] = 0x00;
-	memcpy(strings[strNum].data + 2, value->data + 2, value->length * 2);
+void B2C_setStr(Str *str, Str *value, int isString) {
+	free(str->data);
+	str->length = value->length;
+	str->data = malloc(value->length*2);
+	memcpy(str->data, value->data, value->length*2);
 	free_str(value);
 }
 unsigned char* B2C_strToCharArray(Str *str, int isString) {
 	int j = 0;
 	//Initialize the buffer
-	memset(stringBuffer, 0x00, 256);
+	memset(stringBuffer, 0x00, 512);
 	//Goes through the string, starting at 2
-	for (i = 2; i <= (str->length+1) * 2; i++) {
+	for (i = 0; i < str->length; i++) {
 		//Skip null bytes
-		if (str->data[i]) {
-			stringBuffer[j] = str->data[i];
+		if ((str->data[i])&0xFF00) {
+			stringBuffer[j] = (((str->data[i])&0xFF00)>>8);
 			j++;
 		}
+		//There is normally no need to skip null bytes here
+		//if ((str->data[i])&0x00FF) {
+		stringBuffer[j] = ((str->data[i])&0x00FF);
+		j++;
+		//}
 	}
 	free_str(str);
 	return stringBuffer;
 }
 Str *B2C_charArrayToStr(unsigned char* charArray) {
-	int strPos = 2;
+	int strPos = 0;
+	unsigned short currentChar;
 	Str *result = malloc(sizeof(Str));
-	result->data = calloc(strlen((char*)charArray)+1, 2);
-	result->length = 0;
+	result->data = calloc(strlen((char*)charArray), 2);
 	for (i = 0; charArray[i]; i++) {
-		if (!(strPos%2) &&
-				charArray[i] != 0xE5 && 
-				charArray[i] != 0xE6 &&
-				charArray[i] != 0xE7 &&
-				charArray[i] != 0xF7 &&
-				charArray[i] != 0xF9 &&
-				charArray[i] != 0x7F) {
-			strPos++;
+		currentChar = 0;
+		if (charArray[i] == 0xE5 ||
+				charArray[i] == 0xE6 ||
+				charArray[i] == 0xE7 ||
+				charArray[i] == 0xF7 ||
+				charArray[i] == 0xF9 ||
+				charArray[i] == 0x7F) {
+			currentChar = charArray[i] << 8;
+			i++;
 		}
-		result->data[strPos] = charArray[i];
+		result->data[strPos] = currentChar + charArray[i];
 		strPos++;
 	}
-	result->length = (strPos-2)/2;
+	result->length = strPos;
 	return result;
 }
-BCDvar *B2C_strCmp(Str *str1, Str *str2, int isString1, int isString2) {
-	unsigned char str_1[256] = {0}, str_2[256] = {0};
-	int j = 0, isString;
-	//Can't use strToCharArray because the buffer can't be used twice
-	for (i = 2; i <= (str1->length+1) * 2; i++) {
-		//Skip null bytes
-		if (str1->data[i]) {
-			str_1[j] = str1->data[i];
-			j++;
+
+BCDvar *B2C_strCmp(BCDvar *buffer, Str *str1, int isString1, Str *str2, int isString2) {
+	int j, isString = isString1;
+	for (i = 0; i < str1->length && i < str1->length; i++) {
+		//Case 1, most common: both characters are single bytes
+		if (!(str1->data[i]&0xFF00) && (str2->data[i]&0xFF00)) {
+			if (str1->data[i] < str2->data[i]) {
+				goto str1_lt_str2;
+			} else if (str1->data[i] > str2->data[i]) {
+				goto str1_gt_str2;
+			}
+		}
+		//Case 2: str1[i] is single byte, str2[i] is multi byte
+		//They can't be equal because the single byte at str1[i] can't match the multi byte prefix
+		else if (!(str1->data[i]&0xFF00)) {
+			if (str1->data[i] < (str2->data[i]>>8)) {
+				goto str1_lt_str2;
+			} else {
+				goto str1_gt_str2;
+			}
+		}
+		//Case 3: str1[i] is multi byte, str2[i] is single byte
+		else if (!(str2->data[i]&0xFF00)) {
+			if ((str1->data[i]>>8) < str2->data[i]) {
+				goto str1_lt_str2;
+			} else {
+				goto str1_gt_str2;
+			}
+		}
+		//Case 4: both are multi bytes
+		else {
+			if (str1->data[i] < str2->data[i]) {
+				goto str1_lt_str2;
+			} else if (str1->data[i] > str2->data[i]) {
+				goto str1_gt_str2;
+			}
 		}
 	}
-	for (i = 2; i <= (str2->length+1) * 2; i++) {
-		//Skip null bytes
-		if (str2->data[i]) {
-			str_2[j] = str2->data[i];
-			j++;
-		}
-	}
-	isString = isString1;
-	//Can't use strcmp() because it must return -1, 0 or 1
-	//so just implement strcmp while adapting free_str to free both str1 and str2
-	for (i = 0; str_1[i] || str_2[i]; i++) {
-		if (str_1[i] < str_2[i]) {
-			free_str(str1);
-			isString = isString2;
-			free_str(str2);
-			return &__1_;
-		} else if (str_1[i] > str_2[i]) {
-			free_str(str1);
-			isString = isString2;
-			free_str(str2);
-			return &_1_;
-		}
-	}
+	
+	//goto equalStrings;
+	//equalStrings:
+	buffer = &_0_;
+	goto freestrs;
+	
+	str1_gt_str2:
+	buffer = &_1_;
+	goto freestrs;
+	
+	str1_lt_str2:
+	buffer = &__1_;
+	//goto freestrs;
+	
+	freestrs:
 	free_str(str1);
 	isString = isString2;
 	free_str(str2);
-	return &_0_;
+	return buffer;
 }
+
+BCDvar *B2C_strSrc(BCDvar *buffer, Str *str1, int isString1, Str *str2, int isString2, int n) {
+	int isString = isString1;
+	n--;
+	exitIfNeg(n);
+	for (i = n; i < str1->length-str2->length+1; i++) {
+		if (!memcmp(str1->data+i, str2->data+i, str2->length*2)) {
+			intToBCD(i+1, buffer);
+			goto freestrs;
+		}
+	}
+	
+	//str_not_found:
+	buffer = &_0_;
+	
+	freestrs:
+	free_str(str1);
+	isString = isString2;
+	free_str(str2);
+	return buffer;
+}
+
 Str *B2C_strInv(Str *str, int isString) {
 	Str *result = malloc(sizeof(Str));
-	result->data = malloc(2*(str->length+1));
+	result->data = malloc(2*str->length);
 	result->length = str->length;
-	for (i = 2*str->length; i >= 2; i -= 2) {
-		memcpy(result->data + 2*str->length-i, str->data + i, 2);
+	for (i = 0; i < str->length; i++) {
+		result->data[str->length-1-i] = str->data[i];
 	}
 	free_str(str);
 	return result;
 }
-Str *B2C_strJoin(Str *str1, Str *str2, int isString1, int isString2) {
+
+Str *B2C_strJoin(Str *str1, int isString1, Str *str2, int isString2) {
 	int isString = isString1;
 	Str *result = malloc(sizeof(Str));
-	result->data = malloc(2*(str1->length + str2->length + 1));
+	result->data = malloc(2*(str1->length + str2->length));
 	result->length = str1->length + str2->length;
-	memcpy(result->data + 2, str1->data + 2, str1->length * 2);
-	memcpy(result->data + 2 + str1->length * 2, str2->data + 2, str2->length * 2);
+	memcpy(result->data, str1->data, str1->length * 2);
+	memcpy(result->data+str1->length, str2->data, str2->length * 2);
 	free_str(str1);
 	isString = isString2;
 	free_str(str2);
@@ -643,37 +693,47 @@ BCDvar *B2C_strLen(BCDvar *buffer, Str *str, int isString) {
 	intToBCD(str->length, buffer);
 	return buffer;
 }
+
+Str *B2C_strMid2args(Str *str, int isString, int start) {
+	//+1 because strings are 1-indexed in casio
+	return B2C_strMid(str, isString, start, str->length+1-start);
+}
+
 Str *B2C_strMid(Str *str, int isString, int start, int offset) {
 	Str *result = malloc(sizeof(Str));
-	if (!offset) {
+	start--; //In casio, strings are 1-indexed!
+	exitIfNeg(start);
+	exitIfNeg(offset);
+	if (offset+start > str->length) {
 		offset = str->length-start;
 	}
-	result->data = malloc((offset+2) * 2);
-	//Set null byte at the end
-	result->data[(offset+1) * 2] = 0x00;
+	if (start > str->length) {
+		start = str->length;
+	}
+	result->data = malloc(offset * 2);
 	result->length = offset;
 	//Copy the substring
-	memcpy(result->data + 2, str->data + start*2, 2*offset);
+	memcpy(result->data, str->data+start, 2*offset);
 	free_str(str);
 	return result;
 }
 Str *B2C_charAt(Str *str, int isString, int charPos) {
+	//Unused at the moment - not tested
 	Str *result = malloc(sizeof(Str));
-	result->data = malloc(3*2);
-	result->data[2*2] = 0x00;
+	charPos--; //In casio, strings are 1-indexed!
+	exitIfNeg(charPos);
+	result->data = malloc(2);
 	result->length = 1;
-	memcpy(result->data+2, str->data+charPos*2, 2);
+	result->data[0] = str->data[charPos];
 	free_str(str);
 	return result;
 }
 Str *B2C_strUpr(Str *str, int isString) {
 	Str *result = malloc(sizeof(Str));
-	unsigned short currentChar;
-	result->data = malloc((str->length+2) * 2);
-	result->data[str->length+1] = 0x00;
-	memcpy(result->data+2, str->data+2, str->length * 2);
+	result->data = malloc(str->length * 2);
+	memcpy(result->data, str->data, str->length * 2);
 	result->length = str->length;
-	for (i = 3; i <= result->length*2; i+=2) {
+	for (i = 0; i < result->length; i++) {
 		if (result->data[i] >= 'a' && result->data[i] <= 'z') {
 			result->data[i] -= 32;
 		}
@@ -683,12 +743,10 @@ Str *B2C_strUpr(Str *str, int isString) {
 }
 Str *B2C_strLwr(Str *str, int isString) { //(almost) copy of B2C_strUpr - any changes made here must be reflected in strUpr
 	Str *result = malloc(sizeof(Str));
-	unsigned short currentChar;
-	result->data = malloc((str->length+2) * 2);
-	result->data[str->length+1] = 0x00;
-	memcpy(result->data+2, str->data+2, str->length * 2);
+	result->data = malloc(str->length * 2);
+	memcpy(result->data, str->data, str->length * 2);
 	result->length = str->length;
-	for (i = 3; i <= result->length*2; i+=2) {
+	for (i = 0; i < result->length; i++) {
 		if (result->data[i] >= 'A' && result->data[i] <= 'Z') {
 			result->data[i] += 32;
 		}
@@ -698,34 +756,58 @@ Str *B2C_strLwr(Str *str, int isString) { //(almost) copy of B2C_strUpr - any ch
 }
 Str *B2C_strRight(Str *str, int isString, int offset) {
 	Str *result = malloc(sizeof(Str));
-	
-	result->data = malloc((offset+2)*2);
-	result->data[(offset+1)*2] = 0x00;
+	exitIfNeg(offset);
+	result->data = malloc(offset*2);
+	if (offset > str->length) offset=str->length;
 	result->length = offset;
-	memcpy(result->data+2, str->data + (str->length - offset + 1)*2, offset * 2);
+	memcpy(result->data, str->data+(str->length-offset), offset*2);
 	free_str(str);
 	return result;
 }
 Str *B2C_strLeft(Str *str, int isString, int offset) {
 	Str *result = malloc(sizeof(Str));
-	result->data = malloc((offset+2)*2);
-	result->data[(offset+1)*2] = 0x00;
+	exitIfNeg(offset);
+	result->data = malloc(offset*2);
+	if (offset > str->length) offset=str->length;
 	result->length = offset;
-	memcpy(result->data+2, str->data + 2, offset * 2);
+	memcpy(result->data, str->data, offset*2);
+	free_str(str);
+	return result;
+}
+Str *B2C_strShift(Str *str, int isString, int offset) {
+	unsigned short* spaces = malloc(2*abs(offset));
+	Str *result = malloc(sizeof(Str));
+	for (i = 0; i < abs(offset); i++) {
+		spaces[i] = (unsigned short)' ';
+	}
+	result->length = str->length;
+	result->data = malloc(str->length*2);
+	if (offset > str->length) {
+		offset = str->length;
+	} else if (-offset > str->length) {
+		offset = -str->length;
+	}
+	if (offset > 0) {
+		memcpy(result->data, str->data+offset, (str->length-offset)*2);
+		memcpy(result->data+(str->length-offset), spaces, offset*2);
+	} else {
+		memcpy(result->data, spaces, -offset*2);
+		memcpy(result->data-offset, str->data, (str->length+offset)*2);
+	}
 	free_str(str);
 	return result;
 }
 Str *B2C_strRotate(Str *str, int isString, int offset) {
 	Str *result = malloc(sizeof(Str));
 	result->length = str->length;
-	result->data = malloc((str->length+1)*2);
+	result->data = malloc(str->length*2);
 	offset %= str->length;
 	if (offset > 0) {
-		memcpy(result->data+2, str->data+2+2*offset, (str->length-offset)*2);
-		memcpy(result->data+2+2*(str->length-offset), str->data+2, offset*2);
+		memcpy(result->data, str->data+offset, (str->length-offset)*2);
+		memcpy(result->data+(str->length-offset), str->data, offset*2);
 	} else {
-		memcpy(result->data+2, str->data+2+2*(str->length+offset), -offset*2);
-		memcpy(result->data+2+2*-offset, str->data+2, (str->length+offset)*2);
+		memcpy(result->data, str->data+(str->length+offset), -offset*2);
+		memcpy(result->data-offset, str->data, (str->length+offset)*2);
 	}
 	free_str(str);
 	return result;

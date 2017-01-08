@@ -40,7 +40,7 @@ public class Header {
 				//"typedef unsigned short Fontchar;\n" +
 				"typedef struct {\n" +
 				"\tint length;\n" +
-				"\tunsigned char* data;\n" +
+				"\tunsigned short* data;\n" +
 				"} Str;\n\n" +
 				"typedef struct {\n" +
 				"\tunsigned char data[4];\n" +

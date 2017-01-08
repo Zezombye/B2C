@@ -19,8 +19,8 @@ public class B2C {
 	final static boolean debugMode = true;
 	
 	static String path = "C:\\Users\\Catherine\\Documents\\CASIO\\fx-9860G SDK\\TestB2C\\";
-	static String mainProgramName = "DEMNR";
-	static String pathToG1M = "C:\\Users\\Catherine\\Desktop\\goldroad.g2m";
+	static String mainProgramName = "TESTSTR";
+	static String pathToG1M = "C:\\Users\\Catherine\\Desktop\\teststr.g1m";
 	static boolean isRealTimeGame = true;
 	static boolean assureOS1Compatibility = true;
 	static boolean usesAcOnTimer = true;
@@ -108,7 +108,7 @@ public class B2C {
 				"unsigned int key;\n" +
 				"int i;\n"+
 				"BCDvar var[29] = {0}; //A-Z, r, theta, Ans\n"+
-				"Str strings[20];\n" + 
+				"Str str[20];\n" + 
 				"Mat mat[27]; //Important thing: matrixes are (height, width) not (width, height)\n" +
 				"List list[26];\n" +
 				"char dummyOpCode[2] = {5, 8};\n" +
@@ -116,7 +116,7 @@ public class B2C {
 				"BCDvar alphaVarBuffer;\n" +
 				"BCDvar expressionBuffer;\n" +
 				"BCDvar getkeyBuffer;\n" +
-				"unsigned char stringBuffer[256] = {0};\n";
+				"unsigned char stringBuffer[512] = {0};\n";
 				/*"const BCDvar ZERO = {0};\n";
 				for (int i = 1; i <= 9; i++) {
 					main_c += "const BCDvar " + Parser.consts.get(i) + " = {0x10, 0x0" + i + "};\n";
@@ -124,7 +124,7 @@ public class B2C {
 		main_c+="\nint AddIn_main(int isAppli, unsigned short OptionNum) {\n" +
 					"\t//Initialize strings\n" +
 					"\tfor (i = 0; i < 20; i++) {\n" +
-						"\t\tstrings[i].length = 0;\n" +
+						"\t\tstr[i].length = 0;\n" +
 					"\t}\n" +
 					"\tsrand((unsigned int)" + new Random().nextInt() + ");\n" +
 					"\t#ifdef USES_INTERRUPTION_TIMER\n" +
@@ -204,9 +204,16 @@ public class B2C {
 		for (int i = 0; i <= 1; i++) {
 			IO.writeToFile(new File(path+externalLibs[i]), IO.readFromRelativeFile(externalLibs[i]), true);
 		}
-		/*for (char c = 'A'; c <= 'Z'; c++) {
-			Header.addDefine(c+" "+(c-'A'));
-		}*/
+		//Add constants for easier reading and debugging
+		for (char c = 'A'; c <= 'Z'; c++) {
+			Header.addDefine("VAR_"+c+" (&var["+(c-'A')+"])");
+		}
+		for (char c = 'A'; c <= 'Z'; c++) {
+			Header.addDefine("MAT_"+c+" (&mat["+(c-'A')+"])");
+		}
+		for (int i = 1; i <= 20; i++) {
+			Header.addDefine("STR_"+i+" (&str["+(i-1)+"])");
+		}
 		Header.addDefine("FALSE 0");
 		Header.addDefine("TRUE 1");
 		Header.addDefine("A_GREATER_THAN_B 1");
@@ -214,6 +221,7 @@ public class B2C {
 		Header.addDefine("A_LESS_THAN_B -1");
 		Header.addDefine("NO_ERROR 1");
 		Header.addDefine("MEMORY_ERROR 4");
+		Header.addDefine("ARG_ERROR 8");
 		Header.addDefine("INTERRUPTION_TIMER 2");
 		if (usesAcOnTimer) {
 			Header.addDefine("USES_INTERRUPTION_TIMER");
@@ -227,13 +235,14 @@ public class B2C {
 		Header.addDefine("LIST_START 0x10");
 		Header.addDefine("MAT_START 0x10");
 		
-		Header.addDefine("ANS 28");
-		Header.addDefine("THETA 27");
-		Header.addDefine("RADIUS 26");
+		Header.addDefine("VAR_ANS (&var[28])");
+		Header.addDefine("VAR_THETA (&var[27])");
+		Header.addDefine("VAR_RADIUS (&var[26])");
 		
 		Header.addDefine("SETUP_LISTFILE 0x2E");
 		
 		Header.addDefine("free_str(x) if(!isString){free(x->data); free(x);}");
+		Header.addDefine("exitIfNeg(x) if((x)<0){B2C_exit(ARG_ERROR);}");
 		Header.addDefine("getDigit(BCDvar, i) (((i)%2) ? (*(BCDvar))[((i)+1)/2+1]>>4 : (*(BCDvar))[((i)+1)/2+1]&0x0F)");
 		Header.addDefine("getExp(BCDvar) (((*(BCDvar))[0]>>4) * 100 + ((*(BCDvar))[0]&0x0F) * 10 + ((*(BCDvar))[1]>>4))");
 		Header.create();

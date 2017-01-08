@@ -12,15 +12,7 @@ public class Constants {
 	 * special things like 1e5, 1/3, etc.
 	 */
 	public static void add(String constant) {
-		constant = constant.replaceAll("\\x99|\\x87", "-");
-		//System.out.println(constant);
-		//Interpret "." as "0.", example: -.5 = -0.5
-		constant = constant.replaceAll("(?<!\\d)\\.", "0.");
-		
-		//Remove last ".", example: 85. = 85.0 = 85
-		if (constant.charAt(constant.length()-1) == '.') {
-			constant = constant.substring(0, constant.length()-1);
-		}
+		constant = getNumberNotation(constant);
 		
 		//Parse special operators
 		//sqrt
@@ -89,17 +81,22 @@ public class Constants {
 	}
 	
 	public static String getVarNotation(String nb) {
+		String result = getNumberNotation(nb);
+		result = result.replaceAll("\\.|\\-", "_");
+		return "_" + result + "_";
+	}
+	
+	public static String getNumberNotation(String nb) {
 		String result;
-		//System.out.println(nb);
 		result = nb.replaceAll("(?<!\\d)\\.", "0.");
 		//System.out.println(result);
-		result = result.replaceAll("\\.|\\-|\\x99|\\x87", "_");
+		result = result.replaceAll("\\x99|\\x87", "-");
 		//System.out.println(result);
 		//Remove last "."
 		if (result.charAt(result.length()-1) == '.') {
 			result = result.substring(0, result.length()-1);
 		}
-		return "_" + result + "_";
+		return result;
 	}
 	
 	public static boolean isNumber(String nb) {
