@@ -588,10 +588,12 @@ Str *B2C_charArrayToStr(unsigned char* charArray) {
 }
 
 BCDvar *B2C_strCmp(BCDvar *buffer, Str *str1, int isString1, Str *str2, int isString2) {
+	//Gotos are evil
+	//But sometimes evil is necessary for the greater good
 	int j, isString = isString1;
 	for (i = 0; i < str1->length && i < str1->length; i++) {
 		//Case 1, most common: both characters are single bytes
-		if (!(str1->data[i]&0xFF00) && (str2->data[i]&0xFF00)) {
+		if (!(str1->data[i]&0xFF00) && !(str2->data[i]&0xFF00)) {
 			if (str1->data[i] < str2->data[i]) {
 				goto str1_lt_str2;
 			} else if (str1->data[i] > str2->data[i]) {
@@ -625,6 +627,13 @@ BCDvar *B2C_strCmp(BCDvar *buffer, Str *str1, int isString1, Str *str2, int isSt
 		}
 	}
 	
+	//Test for length
+	if (str1->length < str2->length) {
+		goto str1_lt_str2;
+	} else if (str1->length > str2->length) {
+		goto str1_gt_str2;
+	}
+	
 	//goto equalStrings;
 	//equalStrings:
 	buffer = &_0_;
@@ -650,7 +659,7 @@ BCDvar *B2C_strSrc(BCDvar *buffer, Str *str1, int isString1, Str *str2, int isSt
 	n--;
 	exitIfNeg(n);
 	for (i = n; i < str1->length-str2->length+1; i++) {
-		if (!memcmp(str1->data+i, str2->data+i, str2->length*2)) {
+		if (!memcmp(str1->data+i, str2->data, str2->length*2)) {
 			intToBCD(i+1, buffer);
 			goto freestrs;
 		}
