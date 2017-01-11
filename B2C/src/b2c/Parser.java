@@ -78,13 +78,14 @@ public class Parser {
 			if (content.charAt(content.length()-1) == ')') {
 				content = content.substring(0, content.length()-1);
 			}
-			Integer[] args = parseArgs(content);
+			Integer[] args = parseArgs(content.substring(2));
 			if (args.length != 1) {
-				error("Fill method doesn't have 2 arguments!");
+				error("Fill method doesn't have 2 arguments! ("+args.length+")");
 			}
+			args[0] += 2;
 			if (content.substring(args[0]+1).startsWith(new String(new char[]{0x7F,0x40}))) {
 				return "B2C_fillMat(" + parse(content.substring(2, args[0]), CONV_TO_BCD) + ", "
-					+ parse(content.substring(args[0]+1), CONV_TO_BCD) + ");";
+					+ getChar(content.substring(args[0]+1+2)) + ");";
 			} else if (content.substring(args[0]+1).startsWith(new String(new char[]{0x7F,0x51}))) {
 				return "B2C_fillList(" + parse(content.substring(2, args[0]), CONV_TO_BCD) + ", "
 						+ parse(content.substring(args[0]+1), CONV_TO_BCD) + ");";
@@ -224,7 +225,7 @@ public class Parser {
 			incrementTabs();
 			String result = "for (";
 			//variable = beginning;
-			result += parse(content.substring(2, toPosition), CONV_TO_BCD) + "; ";
+			result += parse(content.substring(2, toPosition), WHOLE_INSTRUCTION) + " ";
 			
 			//TODO: parse the step as an integer to know if it is <0 or >0
 			//also put the break condition in the for
@@ -234,12 +235,12 @@ public class Parser {
 				System.out.println("Step = " + step);
 				String limit = parse(content.substring(toPosition+2, stepPosition), CONV_TO_BCD);
 				result += "(*" + parse(step+"<0"+(char)0x7F+(char)0xB0+variable+(char)0x12+limit+(char)0x7F+(char)0xB1+step+">0"+(char)0x7F+(char)0xB0+variable+(char)0x10+limit, CONV_TO_BCD)+")[1]" + "; "
-						+ parse(variable+(char)0x89+step+(char)0x0E+variable, CONV_TO_BCD) + ") {";
+						+ parse(variable+(char)0x89+step+(char)0x0E+variable) + ") {";
 						//+ "\n" + tabs + "if ((*B2C_calcExp((unsigned char*)\""+step+"<0\\x7F\"\"\\xB0\"\""+variable+"<"+limit+"\\x7F\"\"\\xB1\"\""+step+">0\\x7F\"\"\\xB0\"\""+variable+">"+limit+"\"))[1]) break;";
 			} else {
 				//variable <= limit; variable = variable + 1) {"
 				result += "(*" + parse(variable + (char)0x10 + content.substring(toPosition+2), CONV_TO_BCD) + ")[1]; "
-						+ parse(variable + (char)0x89 + "1" + (char)0x0E + variable, CONV_TO_BCD) + ") {";
+						+ parse(variable + (char)0x89 + "1" + (char)0x0E + variable) + ") {";
 			}
 			
 			return result;
@@ -330,7 +331,7 @@ public class Parser {
 			if (content.length() != 3) {
 				error("Invalid argument for ClrMat!");
 			}
-			return "B2C_clrMat(" + getMat(content.charAt(2)) +  ");";
+			return "B2C_clrMat(" + getChar(content.charAt(2)) +  ");";
 		}
 		
 		
@@ -342,9 +343,9 @@ public class Parser {
 		matchResult = checkMatch(content, new String(new char[]{0x0E}));
 		if (matchResult >= 0) {
 			
-			if (option != WHOLE_INSTRUCTION) {
+			/*if (option != WHOLE_INSTRUCTION) {
 				error("Assignment isn't whole instruction?!");
-			}
+			}*/
 			
 			//Check for the Dim assignment case; in this case it's not an assignment but a method calling
 			if (content.substring(matchResult+1).startsWith(new String(new char[]{0x7F, 0x46}))) {
@@ -384,7 +385,7 @@ public class Parser {
 			} else if (content.substring(matchResult+1).matches("[A-Z]~[A-Z]")) {
 				String assignment = parse(content.substring(0, matchResult), CONV_TO_BCD);
 				incrementTabs();
-				String result = "for (i = '"+content.charAt(matchResult+1)+"'; i <= '"+content.charAt(matchResult+3)+"'; i++) {\n"+tabs+"B2C_setAlphaVar(i, "+assignment+");\n";
+				String result = "for (i = "+content.charAt(matchResult+1)+"; i <= "+content.charAt(matchResult+3)+"; i++) {\n"+tabs+"B2C_setAlphaVar(i, "+assignment+");\n";
 				decrementTabs();
 				return result + tabs + "}";
 			
@@ -415,7 +416,7 @@ public class Parser {
 				if (check.length != 1) {
 					error("Mat instruction does not have one comma!");
 				}
-				String result = "B2C_setMatCase(" + getMat(content.charAt(matchResult+3)) + ", " +
+				String result = "B2C_setMatCase(" + getChar(content.charAt(matchResult+3)) + ", " +
 						handleIntConversion(content.substring(matchResult+5, matchResult+5+check[0])) + ", " +
 						handleIntConversion(content.substring(matchResult+5+check[0]+1, content.length()-1)) + ", " +
 						parse(content.substring(0, matchResult), CONV_TO_BCD) + ");";
@@ -436,8 +437,11 @@ public class Parser {
 			
 			//Check for variable assignment
 			} else if (content.substring(matchResult+1).matches("[A-Z\\xCD\\xCE]")) {
-				String result = "B2C_setAlphaVar(" + getAlphaVar(content.charAt(matchResult+1)) 
-						+ ", " + parse(content.substring(0, matchResult), CONV_TO_BCD) + ");";
+				String result = "B2C_setAlphaVar(" + getChar(content.charAt(matchResult+1)) 
+						+ ", " + parse(content.substring(0, matchResult), CONV_TO_BCD) + ")";
+				if (option == WHOLE_INSTRUCTION) {
+					result += ";";
+				}
 				return result;
 			
 			//Check for Str assignment
@@ -475,7 +479,7 @@ public class Parser {
 			if (content.length() == 3) {
 				String str = getMat(content.charAt(2));
 				if (option == WHOLE_INSTRUCTION) {
-					str = "B2C_setMat(" + getMat((char)0xC0) + ", " + str + ");";
+					str = "B2C_setMat(" + getChar((char)0xC0) + ", " + str + ");";
 				}
 				return str;
 			}
@@ -486,7 +490,7 @@ public class Parser {
 				if (arg.length != 1) {
 					error("matrix coordinates are fewer or more than two!");
 				} else {
-					return supportAns("&mat[" + getMat(content.charAt(2)) + "].data[mat[" + getMat(content.charAt(2)) + "].height*(" 
+					return supportAns("&" + getMat(content.charAt(2)) + ".data["+getMat(content.charAt(2)) + ".height*(" 
 							/*+ handleIntConversion(parse(content.substring(check[0]+1, check[0]+1+arg[0]))) + ")+("
 							+ handleIntConversion(parse(content.substring(check[0]+2+arg[0],content.length()-1))) + ")]", option);*/
 							+ handleIntConversion(content.substring(check[0]+1, check[0]+1+arg[0])) + "-1)+("
@@ -502,7 +506,7 @@ public class Parser {
 			
 			//If it is Dim Mat
 			if (content.substring(2).startsWith(new String(new char[]{0x7F, 0x40}))) {
-				String result = "B2C_getDimMat(" + getMat(content.charAt(4)) + ")";
+				String result = "B2C_getDimMat(" + getChar(content.charAt(4)) + ")";
 				if (option == WHOLE_INSTRUCTION) 
 					return "B2C_setList(LIST_ANS, " + result + ");";
 				return result;
@@ -642,10 +646,11 @@ public class Parser {
 			if (content.charAt(content.length()-1) == ')') {
 				content = content.substring(0, content.length()-1);
 			}
-			Integer[] args = parseArgs(content);
+			Integer[] args = parseArgs(content.substring(2));
 			if (args.length != 1) {
 				error("RanInt# method doesn't have 2 arguments!");
 			}
+			args[0] += 2;
 			return supportAns("B2C_ranInt(" + addBCDBuffer() + ", " + parse(content.substring(2, args[0]), CONV_TO_BCD) + ","
 					+ parse(content.substring(args[0]+1), CONV_TO_BCD) + ")", option);
 			
@@ -1232,7 +1237,7 @@ public class Parser {
 	
 	public static String supportAns(String content, int option) {
 		if (option == WHOLE_INSTRUCTION) 
-			return "B2C_setAlphaVar("+getAlphaVar((char)0xC0)+", " + content + ");";
+			return "B2C_setAlphaVar("+getChar((char)0xC0)+", " + content + ");";
 		return content;
 	}
 	
@@ -1291,7 +1296,7 @@ public class Parser {
 		if (var.length() != 1) {
 			error("Unknown var!");
 		} else if (var.charAt(0) >= 'A' && var.charAt(0) <= 'Z') {
-			result += String.valueOf(var.charAt(0)-'A');
+			result += var.charAt(0);
 		} else if (var.charAt(0) == 0xCD) {
 			result += "RADIUS";
 		} else if (var.charAt(0) == 0xCE) {
@@ -1307,7 +1312,7 @@ public class Parser {
 	public static String getMat(char mat) {
 		String result = "MAT_";
 		if (mat >= 'A' && mat <= 'Z') {
-			result += (mat-'A');
+			result += mat;
 		} else if (mat == 0xC0) {
 			result += "ANS";
 		} else {
@@ -1315,9 +1320,31 @@ public class Parser {
 		}
 		return result;
 	}
+	
+	public static String getChar(String char_) {
+		if (char_.length() != 1) {
+			error("Unknown char " + char_ + "!");
+		}
+		return getChar(char_.charAt(0));
+	}
+	public static String getChar(char char_) {
+		String result = null;
+		if (char_ >= 'A' && char_ <= 'Z') {
+			result = ""+char_;
+		} else if (char_ == 0xCD) {
+			result = "RADIUS";
+		} else if (char_ == 0xCE) {
+			result = "THETA";
+		} else if (char_ == 0xC0) {
+			result = "ANS";
+		} else {
+			error("Unknown char "+char_+"!");
+		}
+		return result;
+	}
 	public static String getList(String list) {
 		if (list.length() == 1 && list.charAt(0) == 0xC0) {
-			return "LIST_ANS";
+			return "ANS";
 		} else {
 			return handleIntConversion(list);
 		}
@@ -1352,7 +1379,7 @@ public class Parser {
 	public static String printNonAscii(String content) {
 		String result = "";
 		for (int i = 0; i < content.length(); i++) {
-			if (content.charAt(i) >= 32 && content.charAt(i) < 127) {
+			if (content.charAt(i) >= 32 && content.charAt(i) < 127 && (i == 0 || i > 0 && !isMultibytePrefix(content.charAt(i-1)))) {
 				result += content.charAt(i) + " ";
 			} else {
 				String hex = Integer.toHexString(content.charAt(i));

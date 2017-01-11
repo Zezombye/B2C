@@ -19,8 +19,8 @@ public class B2C {
 	final static boolean debugMode = true;
 	
 	static String path = "C:\\Users\\Catherine\\Documents\\CASIO\\fx-9860G SDK\\TestB2C\\";
-	static String mainProgramName = "TESTSTR";
-	static String pathToG1M = "C:\\Users\\Catherine\\Desktop\\teststr.g1m";
+	static String mainProgramName = "GOLDROADsub";
+	static String pathToG1M = "C:\\Users\\Catherine\\Desktop\\goldroad.g2m";
 	static boolean isRealTimeGame = true;
 	static boolean assureOS1Compatibility = true;
 	static boolean usesAcOnTimer = true;
@@ -200,16 +200,15 @@ public class B2C {
 		Syscalls.addSyscall("dispErrorMessage", "954");
 		Syscalls.createSyscallFile();
 		
-		String[] externalLibs = {"MonochromeLib.c", "MonochromeLib.h", "memory.c", "memory.h"};
+		String[] externalFiles = {"MonochromeLib.c", "MonochromeLib.h", "memory.c", "memory.h", "MainIcon.bmp"};
 		for (int i = 0; i <= 1; i++) {
-			IO.writeToFile(new File(path+externalLibs[i]), IO.readFromRelativeFile(externalLibs[i]), true);
+			IO.writeToFile(new File(path+externalFiles[i]), IO.readFromRelativeFile(externalFiles[i]), true);
 		}
 		//Add constants for easier reading and debugging
 		for (char c = 'A'; c <= 'Z'; c++) {
 			Header.addDefine("VAR_"+c+" (&var["+(c-'A')+"])");
-		}
-		for (char c = 'A'; c <= 'Z'; c++) {
-			Header.addDefine("MAT_"+c+" (&mat["+(c-'A')+"])");
+			Header.addDefine("MAT_"+c+" (mat["+(c-'A')+"])");
+			Header.addDefine(c + " " + (c-'A'));
 		}
 		for (int i = 1; i <= 20; i++) {
 			Header.addDefine("STR_"+i+" (&str["+(i-1)+"])");
@@ -234,10 +233,12 @@ public class B2C {
 		
 		Header.addDefine("LIST_START 0x10");
 		Header.addDefine("MAT_START 0x10");
-		
-		Header.addDefine("VAR_ANS (&var[28])");
+		Header.addDefine("VAR_ANS (&var[26])");
 		Header.addDefine("VAR_THETA (&var[27])");
-		Header.addDefine("VAR_RADIUS (&var[26])");
+		Header.addDefine("VAR_RADIUS (&var[28])");
+		Header.addDefine("ANS 26");
+		Header.addDefine("THETA 27");
+		Header.addDefine("RADIUS 28");
 		
 		Header.addDefine("SETUP_LISTFILE 0x2E");
 		

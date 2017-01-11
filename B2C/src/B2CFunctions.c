@@ -534,8 +534,8 @@ BCDvar *B2C_calcExp(unsigned char* exp) {
 	calcExp(&exp, dummyOpCode, &expressionBuffer, 1);
 	return &expressionBuffer;
 }
-void B2C_setAlphaVar(BCDvar *alphaVar, BCDvar *value) {
-	memcpy(*alphaVar, *value, sizeof(BCDvar)-3);
+void B2C_setAlphaVar(unsigned char alphaVar, BCDvar *value) {
+	memcpy(var[alphaVar], *value, sizeof(BCDvar)-3);
 }
 void B2C_setStr(Str *str, Str *value, int isString) {
 	free(str->data);
